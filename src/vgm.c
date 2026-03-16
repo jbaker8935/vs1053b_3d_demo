@@ -197,8 +197,7 @@ static uint32_t buf_get_le32(vgm_player_t *p)
  * Max input 65535 → max result 37,440,585 which fits comfortably in uint32_t. */
 static uint32_t samples_to_ticks(uint16_t s)
 {
-    uint32_t v = (uint32_t)s;
-    return (v << 9u) + (v << 5u) + (v << 4u) + (v << 3u) + (v << 1u) + v;
+    return mathUnsignedMultiply(s, (uint16_t)VGM_TICKS_PER_SAMPLE);
 }
 
 /* Precomputed ticks for the 16 short-wait lengths used by commands 0x70-0x8F.

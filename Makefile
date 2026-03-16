@@ -62,6 +62,10 @@ $(BUILD_DIR)/%.o: src/%.c | dirs
 $(BUILD_DIR)/%.o: src/%.s build/struct_offsets.inc | dirs
 	$(COMPILE)
 
+# Compile the bench harness (not in src/) so it can be built independently
+$(BUILD_DIR)/bench_mul.o: tools/bench_mul.c | dirs
+	$(CC) -c $(CFLAGS) -o $@ $<
+
 # Link (produces an output binary named '$(NAME)')
 $(BUILD_DIR)/$(NAME): $(OBJS) | dirs
 	@mkdir -p $(BUILD_DIR)
@@ -141,6 +145,25 @@ dist: pgz
 
 run: pgz
 	@echo "run target is a no-op by default. Override to flash or emulate."
+
+# Benchmarks
+BENCH_NAME := bench_mul
+BENCH_OBJ := $(BUILD_DIR)/$(BENCH_NAME).o
+
+bench: $(BUILD_DIR)/$(BENCH_NAME).pgz
+	@echo "bench build complete: $<"
+
+$(BUILD_DIR)/$(BENCH_NAME): $(BENCH_OBJ) | dirs
+	$(CC) -D__llvm_mos__ -T $(LDSCRIPT) -o $@ $(BENCH_OBJ) -I.. -Os -Wall -lm
+
+$(BUILD_DIR)/$(BENCH_NAME).pgz: $(BUILD_DIR)/$(BENCH_NAME)
+	@# Wrap bench binary in .pgz format (same as normal build)
+	@if [ -f $(BUILD_DIR)/$(BENCH_NAME) ]; then \
+		mv $(BUILD_DIR)/$(BENCH_NAME) $(BUILD_DIR)/$(BENCH_NAME).pgz; \
+	fi
+	@# Copy bench artifact to bin/ for easy access
+	@mkdir -p bin
+	@cp $(BUILD_DIR)/$(BENCH_NAME).pgz bin/
 
 info:
 	@echo "ROOT = $(ROOT)"

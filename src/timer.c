@@ -1,9 +1,5 @@
 
-#ifdef AI_AGENT_HOST_TEST
-#include "../tests/include/f256lib_host.h"
-#else
 #include "f256lib.h"
-#endif
 #include "../include/timer.h"
 
 /* Stored in dot-clock ticks so that variable-rate T0 periods can be
@@ -20,15 +16,6 @@ static uint32_t g_last_period = T0_TICK_PERIOD_TICKS;
 /* When false – the VGM library owns T0 re-arming; we only service       */
 /*              alarms and clear T0_PEND.                                 */
 static bool g_fixed_rate = true;
-
-#if PROFILER_USE_TIMER0
-static uint8_t g_t0_initialized = 0u;
-static uint32_t g_t0_last_tick = 0u;
-
-static inline uint32_t t0_delta_24(uint32_t start, uint32_t end) {
-	return (end - start) & (uint32_t)T0_MASK_TICKS;
-}
-#endif
 
 static uint8_t alarm_bit(timer_alarm_id_t alarm) {
 	return (uint8_t)(1u << ((uint8_t)alarm & 7u));
@@ -160,15 +147,7 @@ void timer_tick_elapsed(uint32_t ticks)
 
 bool isTimerDone()
 {
-	#if PROFILER_USE_TIMER0
-	if (!g_t0_initialized) {
-		setTimer0();
-	}
-	const uint32_t now = readTimer0_consistent();
-	return t0_delta_24(g_t0_last_tick, now) >= (uint32_t)T0_TICK_PERIOD_TICKS;
-	#else
 	return (PEEK(T0_PEND) & 0x10) != 0;
-	#endif
 }
 
 uint32_t getAlarmTicks(timer_alarm_id_t alarm) {
