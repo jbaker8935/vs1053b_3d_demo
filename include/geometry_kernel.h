@@ -409,6 +409,13 @@ uint8_t scene_get_screen_edges(uint8_t n_objects, const SceneObjectParams *objec
                                 uint8_t near_color, uint8_t far_color,
                                 uint8_t draw_layer);
 
-void hidden_line_disable(void);                                
+void hidden_line_disable(void);
+
+/* Register a callback that geometry_kernel_wait_complete() calls on every
+ * polling iteration instead of the default nop-delay.  Pass NULL to restore
+ * the default behaviour.  Intended for audio tick servicing during DSP waits
+ * so that the audio loop is not starved when multiple objects are rendered. */
+void geometry_kernel_set_yield_cb(void (*cb)(void));
+void geometry_kernel_yield(void);
 
 #endif // GEOMETRY_KERNEL_H

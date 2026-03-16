@@ -37,21 +37,21 @@ static void demo1_nearfar(void) {
 }
 
 static void demo1_rotate(void) {
-    g_demo_instances[0].yaw   = (uint8_t)(g_demo_instances[0].yaw   + 2u);
-    g_demo_instances[0].pitch = (uint8_t)(g_demo_instances[0].pitch + 1u);
+    g_demo_instances[0].yaw   = (uint8_t)(g_demo_instances[0].yaw   + 3u);
+    g_demo_instances[0].pitch = (uint8_t)(g_demo_instances[0].pitch + 2u);
 }
 
 static void demo1_scale(void) {
     uint8_t s = g_demo_instances[0].scale;
     if (g_instance_scale_dir[0] == 0) {
-        g_instance_scale_dir[0] = 1;
+        g_instance_scale_dir[0] = 2;
     }
     if (g_instance_scale_dir[0] > 0) {
         s = (s < (220u - 3u)) ? (uint8_t)(s + 3u) : 220u;
-        if (s >= 220u) { g_instance_scale_dir[0] = -1; }
+        if (s >= 220u) { g_instance_scale_dir[0] = -2; }
     } else {
         s = (s > (64u + 3u)) ? (uint8_t)(s - 3u) : 64u;
-        if (s <= 64u) { g_instance_scale_dir[0] = 1; }
+        if (s <= 64u) { g_instance_scale_dir[0] = 2; }
     }
     g_demo_instances[0].scale = s;
 }
@@ -125,8 +125,8 @@ static void demo2_arrange(void) {
 
 static void demo2_rotate(void) {
     for (uint8_t i = 0; i < g_demo_instance_count; ++i) {
-        g_demo_instances[i].yaw   = (uint8_t)(g_demo_instances[i].yaw   + 2u);
-        g_demo_instances[i].pitch = (uint8_t)(g_demo_instances[i].pitch + 1u);
+        g_demo_instances[i].yaw   = (uint8_t)(g_demo_instances[i].yaw   + 3u);
+        g_demo_instances[i].pitch = (uint8_t)(g_demo_instances[i].pitch + 2u);
     }
 }
 
@@ -181,14 +181,48 @@ static void demo3_setup(void) {
     no_near_far_coloring = false;
 }
 
+static void demo3_setup_anaconda_2(void) {
+    // overwrite projectile slot with second anaconda pose for "Oh No" event
+    g_demo_instances[1].slot = 1;
+    g_demo_models[1] = &g_model_anaconda;
+    // shift x positions
+    g_demo_instances[0].pos_x = (int16_t)(g_demo_instances[0].pos_x - 100);
+    g_demo_instances[1].pos_x = (int16_t)(g_demo_instances[1].pos_x + 100);
+    // reset Y and Z positions
+    g_demo_instances[0].pos_y = 100;
+    g_demo_instances[0].pos_z = -2000;
+    g_demo_instances[1].pos_y = 100;
+    g_demo_instances[1].pos_z = -2000;
+}
+
 static void demo3_fly(void) {
     // Increment Z to move anaconda toward camera (camera is at z=1400)
-    g_demo_instances[0].pos_z = (int16_t)(g_demo_instances[0].pos_z + 16);
+    g_demo_instances[0].pos_z = (int16_t)(g_demo_instances[0].pos_z + 24);
     g_demo_instances[0].pos_x = (int16_t)(g_demo_instances[0].pos_x - 2);
 
     // Increment Z to move projectile toward camera (camera is at z=1400)
-    g_demo_instances[1].pos_z = (int16_t)(g_demo_instances[1].pos_z + 32);
-    g_demo_instances[1].pos_y = (int16_t)(g_demo_instances[1].pos_y + 1);
+    g_demo_instances[1].pos_z = (int16_t)(g_demo_instances[1].pos_z + 48);
+    g_demo_instances[1].pos_y = (int16_t)(g_demo_instances[1].pos_y + 2);
+    g_demo_instances[1].roll  = (uint8_t)(g_demo_instances[1].roll + 4);
+
+    GameContext *ctx = game_state_data();
+    
+    g_demo_instances[2].pos_x = ctx->wireframe.camera.position.x;
+    g_demo_instances[2].pos_y = ctx->wireframe.camera.position.y;
+    g_demo_instances[2].pos_z = ctx->wireframe.camera.position.z;
+    g_demo_instances[3].pos_x = ctx->wireframe.camera.position.x;
+    g_demo_instances[3].pos_y = ctx->wireframe.camera.position.y;
+    g_demo_instances[3].pos_z = ctx->wireframe.camera.position.z;
+}
+
+static void demo3_ohno_fly(void) {
+    // Increment Z to move anaconda toward camera (camera is at z=1400)
+    g_demo_instances[0].pos_z = (int16_t)(g_demo_instances[0].pos_z + 24);
+    g_demo_instances[0].pos_x = (int16_t)(g_demo_instances[0].pos_x - 2);
+
+    // Increment Z to move second anaconda toward camera (camera is at z=1400)
+    g_demo_instances[1].pos_z = (int16_t)(g_demo_instances[1].pos_z + 48);
+    g_demo_instances[1].pos_y = (int16_t)(g_demo_instances[1].pos_x + 2);
     g_demo_instances[1].roll  = (uint8_t)(g_demo_instances[1].roll + 4);
 
     GameContext *ctx = game_state_data();
@@ -214,11 +248,13 @@ static void demo3_exit(void) {
 static const DemoEvent demo3_events[] = {
     { "Anaconda incoming...",  2,  DEMO_EVENT_ONESHOT,  demo3_setup },
     { "Flyby",                 8, DEMO_EVENT_PERFRAME, demo3_fly   },
+    { "Oh, No",                1, DEMO_EVENT_ONESHOT, demo3_setup_anaconda_2   }, 
+    { "Double Anaconda Flyby", 8, DEMO_EVENT_PERFRAME, demo3_ohno_fly   },   
 };
 
 static const Demo demo3 = {
     .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Anaconda Flyby" },
-    .event_count     = 2,
+    .event_count     = 4,
     .events          = demo3_events,
     .instance_count  = 4,
     .initial_instances = demo3_init,
@@ -272,7 +308,7 @@ static void demo4_static(void) {
 static void demo4_cycle(void) {
     g_d4_color_idx = (uint8_t)((g_d4_color_idx + 1u) % 8u);
     g_d4_anaconda.object_color = demo4_colors[g_d4_color_idx];
-    g_demo_instances[0].yaw = (uint8_t)(g_demo_instances[0].yaw + 1u);
+    g_demo_instances[0].yaw = (uint8_t)(g_demo_instances[0].yaw + 2u);
     GameContext *ctx = game_state_data();
     g_demo_instances[1].pos_x = ctx->wireframe.camera.position.x;
     g_demo_instances[1].pos_y = ctx->wireframe.camera.position.y;

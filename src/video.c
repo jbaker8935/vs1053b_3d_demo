@@ -100,5 +100,12 @@ void video_init(void) {
 }
 
 void video_wait_vblank(void) {
-	graphicsWaitVerticalBlank();
+	/* Spin on the raster row register (same logic as graphicsWaitVerticalBlank)
+	 * but call the geometry-kernel yield each iteration so the audio tick
+	 * is serviced throughout the blanking wait instead of being blocked for
+	 * up to a full frame period. */
+	extern void geometry_kernel_yield(void);
+	while (PEEKW(RAST_ROW_L) != 482) {
+		geometry_kernel_yield();
+	}
 }

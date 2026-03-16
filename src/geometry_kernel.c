@@ -249,6 +249,20 @@ void setup_model_edges(const Model3D *model, uint8_t slot) {
     }
 }
 
+/* Yield callback called on each wait-loop iteration.  NULL = nop-delay only. */
+static void (*g_yield_cb)(void) = NULL;
+
+void geometry_kernel_set_yield_cb(void (*cb)(void)) {
+    g_yield_cb = cb;
+}
+
+/* Call the registered yield callback once.  Use this at coarse-grained idle
+ * points (after a full object readback, inside a vsync spin-wait) to keep the
+ * audio tick running without adding a poll inside every 15 µs SCI call. */
+void geometry_kernel_yield(void) {
+    if (g_yield_cb) { g_yield_cb(); }
+}
+
 void geometry_kernel_reset(void) {
     vs1053_write_mem(VS_GEOM_STATUS, 0x0000);
 }
@@ -303,9 +317,14 @@ uint8_t geometry_kernel_wait_complete(uint16_t timeout_ms) {
             return 2;  // Error
         }
 
-        // Small delay to avoid hammering SCI interface
-        for (volatile uint16_t delay = 0; delay < 25; delay++) {
-            __asm__("nop");
+        /* Yield to registered callback (e.g. audio tick) or fall back to
+         * a short nop delay to avoid hammering the SCI interface. */
+        if (g_yield_cb) {
+            g_yield_cb();
+        } else {
+            for (volatile uint16_t delay = 0; delay < 25; delay++) {
+                __asm__("nop");
+            }
         }
         elapsed++;
     }

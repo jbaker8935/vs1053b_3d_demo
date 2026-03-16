@@ -183,6 +183,7 @@ void demo_engine_render(uint8_t draw_layer) {
             trigger_geometry_kernel();
             geometry_kernel_wait_complete(10000);
             get_screen_edges_with_depth((Model3D *)g_demo_models[i], draw_layer);
+            geometry_kernel_yield(); /* service audio after per-object SCI readback */
         }
     }
 }
