@@ -165,6 +165,38 @@ $(BUILD_DIR)/$(BENCH_NAME).pgz: $(BUILD_DIR)/$(BENCH_NAME)
 	@mkdir -p bin
 	@cp $(BUILD_DIR)/$(BENCH_NAME).pgz bin/
 
+# far_mvn stress test
+TEST_FAR_MVN_NAME := test_far_mvn
+TEST_FAR_MVN_OBJ  := $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).o
+
+test_far_mvn: $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz
+	@echo "test_far_mvn build complete: $<"
+
+$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).o: tools/$(TEST_FAR_MVN_NAME).c | dirs
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(TEST_FAR_MVN_NAME): $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).o | dirs
+	$(CC) -D__llvm_mos__ -T $(LDSCRIPT) -o $@ $< -I.. -Os -Wall -lm
+
+$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz: $(BUILD_DIR)/$(TEST_FAR_MVN_NAME)
+	@if [ -f $(BUILD_DIR)/$(TEST_FAR_MVN_NAME) ]; then \
+		mv $(BUILD_DIR)/$(TEST_FAR_MVN_NAME) $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz; \
+	fi
+	@# Generate listing if an ELF variant exists (same behavior as main target)
+	@if [ -f $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf; \
+	elif [ -f $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf.elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf.elf; \
+	else \
+		ELF_FILE=; \
+	fi; \
+	if [ -n "$${ELF_FILE}" ]; then \
+		$(NM) "$${ELF_FILE}" > $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).sym || true; \
+		$(OBJDUMP) --syms -d --print-imm-hex "$${ELF_FILE}" > $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).lst || true; \
+	fi
+	@mkdir -p bin
+	@cp $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz bin/
+
 info:
 	@echo "ROOT = $(ROOT)"
 	@echo "BUILD_DIR = $(BUILD_DIR)"
