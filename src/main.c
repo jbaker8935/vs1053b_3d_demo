@@ -1,5 +1,6 @@
 #define F256LIB_IMPLEMENTATION
 #include "f256lib.h"
+#include <stdio.h>
 #include "../include/game_state.h"
 #include "../include/input.h"
 #include "../include/input_handler.h"
@@ -11,42 +12,65 @@
 #include "../include/timer.h"
 #include "../include/demo.h"
 #include "../include/demos.h"
-#include "../include/fat32_stream.h"
+#include "../include/vgm_himem.h"
 #include "../include/vgm.h"
 
 extern void loadVS1053Plugin(void);
 extern void boostVSClock(void);
 extern void initialize_plugin(void);
 
+/*  Codec Setup */
+void init_codec() {
+    POKE(0xD620, 0x1F);
+    POKE(0xD621, 0x2A);
+    POKE(0xD622, 0x01);
+    while (PEEK(0xD622) & 0x01)
+        ;
+
+    // Set volume to a reasonable level
+
+    POKE(0xD620, 0x68);
+    POKE(0xD621, 0x05);
+    POKE(0xD622, 0x01);
+    while (PEEK(0xD622) & 0x01)
+        ;
+
+}
+
+
 /* -----------------------------------------------------------------------
  * VGM playback state
  * ----------------------------------------------------------------------- */
 #define VGM_DEFAULT_PATH  "media/vgm/music.vgm"
 
-static vgm_player_t  g_vgm_player;
-static fat32_file_t  g_vgm_file;
-static bool          g_vgm_open  = false;
-static const char   *g_vgm_path  = NULL;
+/* First 512 KiB extended RAM block used as VGM cache.  The full file is
+ * loaded here before the animation loop so SD-card SPI reads never occur
+ * during playback; buffer refills are fast far copies. */
+#define VGM_HIMEM_BASE    0x080000UL
 
-static uint16_t vgm_read_cb(void *ctx, uint8_t *buf, uint16_t len) {
-    return (uint16_t)fat32_read((fat32_file_t *)ctx, buf, len);
-}
-static void vgm_seek_cb(void *ctx, uint32_t offset) {
-    fat32_seek((fat32_file_t *)ctx, offset);
-}
+static vgm_player_t    g_vgm_player;
+static vgm_himem_ctx_t g_vgm_himem;
+static bool            g_vgm_open = false;
+static const char     *g_vgm_path = NULL;
+static uint8_t         g_raw_hdr[4];   /* direct read from himem after load */
+static uint8_t         g_wt_flat[4];   /* flat smoke-test readback          */
+static uint8_t         g_wt_xbank[4];  /* bank-crossing smoke readback      */
 
-/* Open (or re-open for looping) the player.  File handle already open. */
+/* Re-arm the player from the beginning of the cached stream. */
 static void vgm_start(void) {
-    fat32_seek(&g_vgm_file, 0);
-    g_vgm_open = (vgm_open(&g_vgm_player, vgm_read_cb, vgm_seek_cb,
-                           (void *)&g_vgm_file) == VGM_PLAYING);
+    g_vgm_himem.pos = 0u;  /* reset so vgm_open() reads header from pos 0 */
+    g_vgm_open = (vgm_open(&g_vgm_player,
+                            vgm_himem_read, vgm_himem_seek,
+                            &g_vgm_himem) == VGM_PLAYING);
 }
 
-/* Initialise SD card, open the file, and start playback.
+/* Load VGM into high memory (one-time SD read), then start playback.
  * Silently returns on any failure so the demo still runs without audio. */
 static void vgm_init(const char *path) {
-    if (!fat32_init())              return;
-    if (!fat32_open(&g_vgm_file, path)) return;
+    if (!vgm_himem_load(path, VGM_HIMEM_BASE, &g_vgm_himem)) return;
+    /* Read back first 4 bytes directly from high memory before vgm_open
+     * so we can distinguish write-path vs read-path corruption. */
+    movedown24((uint32_t)(uint16_t)(uintptr_t)g_raw_hdr, VGM_HIMEM_BASE, 4u);
     vgm_start();
 }
 
@@ -56,10 +80,9 @@ static void vgm_tick(void) {
     vgm_status_t s = vgm_service(&g_vgm_player);
     if (s == VGM_DONE) {
         vgm_close(&g_vgm_player);  /* silence chip, restore fixed-rate T0 */
-        vgm_start();               /* seek to 0, re-open for looping       */
+        vgm_start();               /* loop: re-open from cached stream      */
     } else if (s == VGM_ERROR) {
         vgm_close(&g_vgm_player);
-        fat32_close(&g_vgm_file);
         g_vgm_open = false;
     }
 }
@@ -88,23 +111,66 @@ int main(int argc, char *argv[]) {
     setup_projection_params(120, 160, 120, -64);
 
     init_models();
-
+    init_codec();
+    /* movedown24 smoke tests -- run before vgm_init so the VGM load does not
+     * overwrite the test area.  The bank-crossing test writes the last 2
+     * bytes of bank 8 and first 2 of bank 9 to exercise the MOVEDOWN path. */
+    {
+        static uint8_t wt_pat[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+        /* Test A: flat write+readback (no bank crossing) */
+        movedown24(VGM_HIMEM_BASE + 0x100uL,
+                (uint32_t)(uint16_t)(uintptr_t)wt_pat, 4u);
+        movedown24((uint32_t)(uint16_t)(uintptr_t)g_wt_flat,
+                VGM_HIMEM_BASE + 0x100uL, 4u);
+        /* Test B: write 4 bytes straddling the 64 KiB boundary (bank 8/9) */
+        movedown24(VGM_HIMEM_BASE + 0xFFFEuL,
+                (uint32_t)(uint16_t)(uintptr_t)wt_pat, 4u);
+        movedown24((uint32_t)(uint16_t)(uintptr_t)g_wt_xbank,
+                VGM_HIMEM_BASE + 0xFFFEuL, 4u);
+    }
     vgm_init(g_vgm_path);  /* start VGM after VS1053B is fully set up */
     geometry_kernel_set_yield_cb(vgm_tick);  /* service audio during DSP waits */
 
     demos_register();
     demo_engine_start(0);
+    /* TODO-DEBUG: remove once audio confirmed working.
+     * Row 22: movedown24 flat vs bank-crossing sanity checks
+     * Row 23: raw bytes from himem (after load, before vgm_open) vs buf (via vgm_open)
+     * Row 24: load size + open status
+     * Expected good: flat=deadbeef  xb=deadbeef  raw=56676d20  buf=56676d20 */
+    {
+        static char dbg[40];
+        snprintf(dbg, sizeof(dbg), "flat:%02x%02x%02x%02x xb:%02x%02x%02x%02x",
+                 g_wt_flat[0],  g_wt_flat[1],  g_wt_flat[2],  g_wt_flat[3],
+                 g_wt_xbank[0], g_wt_xbank[1], g_wt_xbank[2], g_wt_xbank[3]);
+        textGotoXY(0, 22);
+        textPrint(dbg);
+        snprintf(dbg, sizeof(dbg), "raw:%02x%02x%02x%02x buf:%02x%02x%02x%02x",
+                 g_raw_hdr[0],        g_raw_hdr[1],
+                 g_raw_hdr[2],        g_raw_hdr[3],
+                 g_vgm_player.buf[0], g_vgm_player.buf[1],
+                 g_vgm_player.buf[2], g_vgm_player.buf[3]);
+        textGotoXY(0, 23);
+        textPrint(dbg);
+        snprintf(dbg, sizeof(dbg), "sz=%lu op=%d",
+                 g_vgm_himem.size, (int)g_vgm_open);
+        textGotoXY(0, 24);
+        textPrint(dbg);
+    }
 
     setAlarm(TIMER_ALARM_GENERAL0, 1);
     while (true) {
         input_handler_poll();
         InputState *input = input_state_data();
-        if (!demo_engine_update(input)) {
+        if (input->edge.exit) {
             break;
-        }
-        render_frame(game_state_data());
-        game_state_increment_frame();
-        input_state_clear_edges(input);
+        }        
+        // if (!demo_engine_update(input)) {
+        //     break;
+        // }
+        // render_frame(game_state_data());
+        // game_state_increment_frame();
+        // input_state_clear_edges(input);
 
         while (!checkAlarm(TIMER_ALARM_GENERAL0)) {
             vgm_tick();  /* service VGM while waiting for next frame tick */
@@ -114,7 +180,6 @@ int main(int argc, char *argv[]) {
 
     if (g_vgm_open) {
         vgm_close(&g_vgm_player);
-        fat32_close(&g_vgm_file);
     }
     setAlarm(TIMER_ALARM_GENERAL0, 1);  /* one second exit wait */
     while(true) {

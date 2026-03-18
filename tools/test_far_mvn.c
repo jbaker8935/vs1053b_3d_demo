@@ -1,19 +1,6 @@
 /*
- * test_far_mvn.c -- incremental far_mvn stress test for F256 Jr.
+ * test_far_mvn.c -- incremental far_mvn stress test
  *
- * Tests far_mvn by writing a known pattern to increasing physical addresses
- * in extended SRAM (starting at 0x080000), reading it back into near RAM,
- * and verifying every byte.  Starts with a write count of 1 and increases
- * to 255 bytes per chunk.  Within each count, the destination address also
- * advances to exercise the full slot boundary range, especially $Cxxx and
- * $Exxx which previously caused crashes.
- *
- * Faults are reported with the failing address, expected byte, actual byte,
- * and chunk size at the time of failure.  On success each count step prints
- * a green "OK <count>".
- *
- * Build:  make test_far_mvn
- * Run:    copy bin/test_far_mvn.pgz to SD, execute from F256 shell
  */
 
 #define F256LIB_IMPLEMENTATION
@@ -21,8 +8,89 @@
 #include <string.h>
 #include <stdio.h>
 
+#define T1_PEND 0xD660
+#define T1_CTR 0xD658  
+#define T1_VAL_L 0xD659 // current 24 bit value of the timer
+#define T1_VAL_M 0xD65A
+#define T1_VAL_H 0xD65B
+#define CTR_ENABLE  0x01
+#define CTR_CLEAR   0x02
+#define CTR_UPDOWN  0x08
+
+/* Minimal timer helpers used by the benchmark. */
+static void benchSetTimer1(void) {
+    POKE(T1_CTR, CTR_CLEAR);
+    POKE(T1_CTR, CTR_UPDOWN | CTR_ENABLE);
+    POKE(T1_PEND, 0x20);  // clear pending timer 1.
+}
+
+static uint32_t benchReadTimer1(void) {
+    return (uint32_t)((PEEK(T1_VAL_H))) << 16 |
+           (uint32_t)((PEEK(T1_VAL_M))) << 8 |
+           (uint32_t)((PEEK(T1_VAL_L)));
+}
+
+/* Peek24 and Poke24 - Single byte transfer for extended SRAM memory. */
+
+uint8_t peek24(uint32_t addr);
+uint8_t poke24(uint32_t addr, uint8_t value);
+
+asm (
+    ".text                  \n"
+    ".global peek24         \n"
+    "peek24:                \n"
+    "   sta     $5          \n"
+    "   stx     $6          \n"
+    "   lda     __rc2       \n"
+    "   sta     $7          \n"
+    "   ldx     $0          \n"
+    "   ldy     $1          \n"
+    "   txa                 \n"
+    "   ora     #$8         \n"
+    "   php                 \n"
+    "   sei                 \n"
+    "   sta     $0          \n"
+    "   tya                 \n"
+    "   ora     #48         \n"
+    "   sta     $1          \n"
+    "   .byte   0xa7,0x05   \n"
+    "   stx     $0          \n"
+    "   sty     $1          \n"
+    "   plp                 \n"
+    "   ldx     #0          \n"
+    "   rts                 \n"
+);
+
+asm (
+    ".text                  \n"
+    ".global poke24         \n"
+    "poke24:                \n"
+    "   sta     $5          \n"
+    "   stx     $6          \n"
+    "   lda     __rc2       \n"
+    "   sta     $7          \n"
+    "   ldx     $0          \n"
+    "   ldy     $1          \n"
+    "   txa                 \n"
+    "   ora     #$8         \n"
+    "   php                 \n"
+    "   sei                 \n"
+    "   sta     $0          \n"
+    "   tya                 \n"
+    "   ora     #48         \n"
+    "   sta     $1          \n"
+    "   lda     __rc4       \n"
+    "   .byte   0x87,0x05   \n"
+    "   stx     $0          \n"
+    "   sty     $1          \n"
+    "   plp                 \n"
+    "   ldx     #0          \n"
+    "   rts                 \n"
+);
+
 /* -----------------------------------------------------------------------
  * far_mvn - mvn block move for extended SRAM memory.
+ * for overlapping regions where the src is higher than the dst 
  *
  * void far_mvn(uint32_t dest, uint32_t src, uint16_t count)
  * 
@@ -88,9 +156,10 @@ asm(
 );
 
 /* -----------------------------------------------------------------------
- * moveup24 -- cross-bank ascending block move using the 65816 MVN instruction.
+ * movedown24 -- cross-bank descending block move using the 65816 MVN instruction.
+ * for overlapping regions where the src is higher than the dst
  *
- * void moveup24(uint32_t dest, uint32_t src, uint16_t count)
+ * void movedown24(uint32_t dest, uint32_t src, uint16_t count)
  *
  * Based on http://6502org.wikidot.com/software-65816-memorymove
  * 
@@ -111,11 +180,11 @@ asm(
  *   __rc11       dst bank
  *   __rc12:__rc13 chunk size - 1 (saved before MVN; used to update count)
  * ----------------------------------------------------------------------- */
-void moveup24(uint32_t dest, uint32_t src, uint16_t count);
+void movedown24(uint32_t dest, uint32_t src, uint16_t count);
 asm(
     ".text\n"
-    ".global moveup24\n"
-    "moveup24:\n"
+    ".global movedown24\n"
+    "movedown24:\n"
 
     /* Save src bank before clobbering __rc6. */
     "pha\n"                    /* push dst_lo                           */
@@ -129,9 +198,9 @@ asm(
 
     /* Patch self-modifying MVN operand bytes while still in 8-bit mode */
     "lda __rc11\n"
-    "sta __mup24_dst\n"
+    "sta __mdn24_dst\n"
     "lda __rc10\n"
-    "sta __mup24_src\n"
+    "sta __mdn24_src\n"
 
     /* Enter critical section */
     "php\n"
@@ -152,7 +221,7 @@ asm(
     "ldx __rc4\n"              /* X = src 16-bit addr                   */
     "ldy __rc6\n"              /* Y = dst 16-bit addr                   */
 
-    "__mup24_loop:\n"
+    "__mdn24_loop:\n"
 
     "txa\n"
     ".byte $49, $ff, $ff\n"    /* EOR #$FFFF = $FFFF-X                  */
@@ -161,22 +230,22 @@ asm(
     "tya\n"
     ".byte $49, $ff, $ff\n"    /* EOR #$FFFF = $FFFF-Y                  */
     "cmp __rc12\n"
-    "bcc __mup24_have_min\n"
+    "bcc __mdn24_have_min\n"
     "lda __rc12\n"
-    "__mup24_have_min:\n"
+    "__mdn24_have_min:\n"
 
     "cmp __rc8\n"
-    "bcc __mup24_do_mvn\n"
+    "bcc __mdn24_do_mvn\n"
     "lda __rc8\n"
     ".byte $3a\n"
 
-    "__mup24_do_mvn:\n"
+    "__mdn24_do_mvn:\n"
     "sta __rc12\n"
 
     ".byte $54\n"              /* MVN dest_bank, src_bank               */
-    "__mup24_dst:\n"
+    "__mdn24_dst:\n"
     ".byte $00\n"
-    "__mup24_src:\n"
+    "__mdn24_src:\n"
     ".byte $00\n"
     ".byte $4b\n"              /* PHK -- push PBR (= 0) onto stack      */
     ".byte $ab\n"              /* PLB -- pull stack top -> DBR = 0      */
@@ -187,23 +256,23 @@ asm(
     "sbc __rc12\n"
     "sta __rc8\n"
 
-    "beq __mup24_done\n"
+    "beq __mdn24_done\n"
 
     ".byte $e0, $00, $00\n"    /* CPX #0                                */
-    "bne __mup24_check_dst\n"
+    "bne __mdn24_check_dst\n"
     ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                   */
-    "inc __mup24_src\n"
+    "inc __mdn24_src\n"
     ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                  */
 
-    "__mup24_check_dst:\n"
+    "__mdn24_check_dst:\n"
     ".byte $c0, $00, $00\n"    /* CPY #0                                */
-    "bne __mup24_loop\n"
+    "bne __mdn24_loop\n"
     ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                   */
-    "inc __mup24_dst\n"
+    "inc __mdn24_dst\n"
     ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                  */
-    "jmp __mup24_loop\n"
+    "jmp __mdn24_loop\n"
 
-    "__mup24_done:\n"
+    "__mdn24_done:\n"
 
     "sec\n"
     ".byte $fb\n"              /* XCE                                   */
@@ -219,6 +288,7 @@ asm(
 
 /* -----------------------------------------------------------------------
  * far_mvp - mvp block move for extended SRAM memory.
+  * for overlapping regions where the dest is higher than the src
  *
  * void far_mvp(uint32_t dest, uint32_t src, uint16_t count)
  * 
@@ -297,11 +367,191 @@ asm(
 );
 
 /* -----------------------------------------------------------------------
+ * moveup24 -- cross-bank ascending block move using the 65816 MVP instruction.
+ * for overlapping regions where the dest is higher than the src
+ *
+ * void moveup24(uint32_t dest, uint32_t src, uint16_t count)
+ *
+ * Based on http://6502org.wikidot.com/software-65816-memorymove (MOVEUP)
+ *
+ * Handles copies that span 64 KiB bank boundaries by splitting into segments.
+ * X and Y hold the END addresses of the remaining region; MVP decrements both.
+ * Each MVP call moves min(X, Y, count) bytes so that neither the src (X) nor
+ * dst (Y) 16-bit pointer wraps past $0000 → $FFFF within a single call.
+ * After each call, if X==$FFFF the src bank is decremented; if Y==$FFFF the
+ * dst bank is decremented.  Loop until count reaches zero.
+ *
+ * Prolog computes end addresses from (start + count - 1), propagating any
+ * 16-bit carry into the bank byte before entering the main loop.
+ *
+ * llvm-mos calling convention (uint32_t, uint32_t, uint16_t):
+ *   dest lo:hi:bank  -> A : X : __rc2
+ *   src  lo:hi:bank  -> __rc4 : __rc5 : __rc6
+ *   count lo:hi      -> __rc8 : __rc9
+ *
+ * ZP scratch (all __rcN caller-saved in llvm-mos):
+ *   __rc6:__rc7  dst 16-bit addr (rebuilt from A:X on entry)
+ *   __rc10       src bank (adjusted for end-address carry)
+ *   __rc11       dst bank (adjusted for end-address carry)
+ *   __rc12:__rc13 chunk size - 1 (saved before MVP; used to update count)
+ * ----------------------------------------------------------------------- */
+void moveup24(uint32_t dest, uint32_t src, uint16_t count);
+asm(
+    ".text\n"
+    ".global moveup24\n"
+    "moveup24:\n"
+
+    /* --- Prolog: unpack registers (8-bit / 6502 emulation mode) ---
+     * On entry: A = dest_lo, X = dest_hi, __rc2 = dest_bank
+     *           __rc4:__rc5 = src_lo16, __rc6 = src_bank
+     *           __rc8:__rc9 = count
+     */
+    "pha\n"                    /* push dest_lo                             */
+    "stx __rc7\n"              /* __rc7 = dest_hi                         */
+    "lda __rc6\n"              /* src bank                                */
+    "sta __rc10\n"             /* __rc10 = src bank                       */
+    "lda __rc2\n"              /* dest bank                               */
+    "sta __rc11\n"             /* __rc11 = dest bank                      */
+    "pla\n"                    /* A = dest_lo                             */
+    "sta __rc6\n"              /* __rc6 = dest_lo, __rc7 = dest_hi        */
+
+    /* Enable flat SRAM, save $01, enter 65816 native 16-bit mode */
+    "php\n"
+    "sei\n"
+    "lda $00\n"
+    "ora #$08\n"
+    "sta $00\n"
+    "lda $01\n"
+    "pha\n"                    /* save $01                                */
+    "ora #$30\n"               /* bits4+5: Moves IO and Cart to Hi-Mem    */
+    "sta $01\n"
+
+    "clc\n"
+    ".byte $fb\n"              /* XCE -> native mode                      */
+    ".byte $c2, $30\n"         /* REP #$30 -> 16-bit A, X, Y              */
+
+    /* Load 16-bit start addresses */
+    "ldx __rc4\n"              /* X = src_lo16                            */
+    "ldy __rc6\n"              /* Y = dst_lo16                            */
+
+    /* src_end = src_lo16 + count; carry -> src_bank++; DEC to get count-1 */
+    "txa\n"
+    "clc\n"
+    "adc __rc8\n"              /* A = src_lo16 + count (may carry)        */
+    "bcc __mup24_no_src_adj\n"
+    ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                     */
+    "inc __rc10\n"             /* src_bank++                              */
+    ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                    */
+    "__mup24_no_src_adj:\n"
+    ".byte $3a\n"              /* DEC A -> src_lo16 + count - 1           */
+    "tax\n"                    /* X = src_end_16                          */
+
+    /* dst_end = dst_lo16 + count; carry -> dst_bank++; DEC to get count-1 */
+    "tya\n"
+    "clc\n"
+    "adc __rc8\n"              /* A = dst_lo16 + count (may carry)        */
+    "bcc __mup24_no_dst_adj\n"
+    ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                     */
+    "inc __rc11\n"             /* dst_bank++                              */
+    ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                    */
+    "__mup24_no_dst_adj:\n"
+    ".byte $3a\n"              /* DEC A -> dst_lo16 + count - 1           */
+    "tay\n"                    /* Y = dst_end_16                          */
+
+    /* Patch self-modifying MVP operand bytes (switch to 8-bit for byte stores) */
+    ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                     */
+    "lda __rc11\n"
+    "sta __mup24_dst\n"
+    "lda __rc10\n"
+    "sta __mup24_src\n"
+    ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                    */
+
+    /* --- Main loop ---
+     * X = src_end of remaining region  (decrements toward bank boundary)
+     * Y = dst_end of remaining region  (decrements toward bank boundary)
+     * __rc8 = bytes remaining
+     * __rc10 = current src bank, __rc11 = current dst bank
+     *
+     * chunk_minus_1 = min(X, Y, count-1)
+     *   When X or Y is the minimum, X+1 (or Y+1) bytes are moved, causing
+     *   that pointer to wrap $0000 -> $FFFF (detected after MVP, bank--).
+     *   When count is the minimum, no bank boundary is crossed this segment.
+     */
+    "__mup24_loop:\n"
+
+    /* A = min(X, Y) */
+    "txa\n"
+    "sta __rc12\n"             /* __rc12 = X                              */
+    "tya\n"
+    "cmp __rc12\n"             /* compare Y vs X                          */
+    "bcc __mup24_have_min\n"   /* if Y < X: A = Y (dst closer to boundary)*/
+    "lda __rc12\n"             /* else:     A = X (src closer or equal)   */
+    "__mup24_have_min:\n"
+
+    /* If min(X,Y) < count: bank crossing will occur, use min as operand.
+     * Otherwise count bytes fit in one segment; use count-1 as operand.  */
+    "cmp __rc8\n"
+    "bcc __mup24_do_mvp\n"
+    "lda __rc8\n"
+    ".byte $3a\n"              /* DEC A -> count - 1                      */
+    "__mup24_do_mvp:\n"
+    "sta __rc12\n"             /* save chunk_minus_1                      */
+
+    /* Execute MVP: moves chunk_minus_1+1 bytes descending */
+    ".byte $44\n"              /* MVP opcode                              */
+    "__mup24_dst:\n"
+    ".byte $00\n"
+    "__mup24_src:\n"
+    ".byte $00\n"
+    ".byte $4b\n"              /* PHK -> push PBR (= 0)                   */
+    ".byte $ab\n"              /* PLB -> DBR = 0                          */
+
+    /* count -= chunk_minus_1 + 1 */
+    "lda __rc8\n"
+    ".byte $3a\n"              /* DEC A -> count - 1                      */
+    "sec\n"
+    "sbc __rc12\n"             /* A = count - 1 - chunk_minus_1           */
+    "sta __rc8\n"
+    "beq __mup24_done\n"
+
+    /* Check X == $FFFF: src crossed bank boundary downward -> src_bank-- */
+    ".byte $e0, $ff, $ff\n"    /* CPX #$FFFF                              */
+    "bne __mup24_check_dst\n"
+    ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                     */
+    "dec __mup24_src\n"        /* src_bank--                              */
+    ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                    */
+
+    "__mup24_check_dst:\n"
+    /* Check Y == $FFFF: dst crossed bank boundary downward -> dst_bank-- */
+    ".byte $c0, $ff, $ff\n"    /* CPY #$FFFF                              */
+    "bne __mup24_loop\n"
+    ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                     */
+    "dec __mup24_dst\n"        /* dst_bank--                              */
+    ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                    */
+    "jmp __mup24_loop\n"
+
+    "__mup24_done:\n"
+
+    "sec\n"
+    ".byte $fb\n"              /* XCE -> emulation mode                   */
+    "lda $00\n"
+    "and #$F7\n"
+    "sta $00\n"
+    "pla\n"                    /* restore $01                             */
+    "sta $01\n"
+    "plp\n"
+    "rts\n"
+);
+
+/* -----------------------------------------------------------------------
  * Test parameters
  * ----------------------------------------------------------------------- */
 
 /* First extended SRAM block */
 #define HIMEM_BASE  0x080000UL
+
+/* Number of iterations to run each test */
+#define TEST_RUNS 5u
 
 /* Near-RAM staging buffers -- two 512-byte buffers in BSS */
 static uint8_t s_src[512];
@@ -472,15 +722,16 @@ static uint8_t run_one_test(mvfn_t fn, char *sl, uint8_t row, bool verbose, bool
  * ----------------------------------------------------------------------- */
 int main(int argc, char *argv[])
 {
+    textSetDouble(false,false);
     textClear();
-    char    s_line[64];
+    static char    s_line[64];
     uint8_t r;
 
     textGotoXY(0, 0); textPrint("MVN/MVP/Loop test  base=0x080000      ");
 
     /* Run each test 100 times to expose intermittent hardware issues. */
     {
-        const uint8_t runs = 100u;
+        const uint8_t runs = TEST_RUNS;
         uint8_t failures = 0u;
 
         textGotoXY(0, 2); textPrint("--- MVN (ascending) ---               ");
@@ -495,7 +746,7 @@ int main(int argc, char *argv[])
     }
 
     {
-        const uint8_t runs = 100u;
+        const uint8_t runs = TEST_RUNS;
         uint8_t failures = 0u;
 
         textGotoXY(0, 8); textPrint("--- moveup24 (ascending, cross-bank) ---");
@@ -531,7 +782,7 @@ int main(int argc, char *argv[])
     }
 
     {
-        const uint8_t runs = 100u;
+        const uint8_t runs = TEST_RUNS;
         uint8_t failures = 0u;
 
         textGotoXY(0, 16); textPrint("--- MVP (descending) ---              ");
@@ -546,7 +797,7 @@ int main(int argc, char *argv[])
     }
 
     {
-        const uint8_t runs = 100u;
+        const uint8_t runs = TEST_RUNS;
         uint8_t failures = 0u;
 
         textGotoXY(0, 22); textPrint("--- far_loop (65816 LDA/STA) ---      ");
@@ -558,6 +809,83 @@ int main(int argc, char *argv[])
         snprintf(s_line, 64, "farloop: %s (%u/%u failures)      ",
                  failures == 0u ? "ALL PASS" : "FAILED", failures, runs);
         textGotoXY(0, 26); textPrint(s_line);
+    }
+
+    {
+        const uint8_t runs = TEST_RUNS;
+        uint8_t failures = 0u;
+
+        textGotoXY(0, 28); textPrint("--- movedown24 (descending, cross-bank) ---");
+        r = run_one_test(movedown24, s_line, 29, true, true);
+        if (!r) failures++;
+        for (uint8_t i = 1u; i < runs; ++i) {
+            if (!run_one_test(movedown24, s_line, 29, true, true)) failures++;
+        }
+        snprintf(s_line, 64, "movedown24: %s (%u/%u failures)   ",
+                 failures == 0u ? "ALL PASS" : "FAILED", failures, runs);
+        textGotoXY(0, 32); textPrint(s_line);
+    }
+
+    /* Cross-bank exercise: copy 512 bytes starting near the end of bank 8. */
+    {
+        const uint32_t cross_dest = HIMEM_BASE + 0xFF00u;
+        const uint16_t cross_len = 512u;
+        uint8_t seed = 0xB7u;
+        fill_pattern(s_src, cross_len, seed);
+        movedown24(cross_dest, (uint32_t)(uint16_t)(uintptr_t)s_src, cross_len);
+        memset(s_dst, 0, cross_len);
+        movedown24((uint32_t)(uint16_t)(uintptr_t)s_dst, cross_dest, cross_len);
+        uint16_t bad = verify_pattern(s_dst, cross_len, seed);
+        if (bad) {
+            uint16_t idx = bad - 1u;
+            snprintf(s_line, 64,
+                     "dn24 cross FAIL idx=%-3u dest=0x%06lx", idx,
+                     (unsigned long)(cross_dest + idx));
+            textGotoXY(0, 33); textPrint(s_line);
+        } else {
+            textGotoXY(0, 33); textPrint("dn24 cross-bank OK                        ");
+        }
+    }
+
+    {
+        /* Benchmark: compare far_mvn vs peek24 loop performance across sizes. */
+        const uint8_t sizes[] = {1, 2, 4, 8, 16, 32, 64, 128, 255};
+        const uint8_t size_count = sizeof(sizes) / sizeof(sizes[0]);
+        const uint16_t iters = 10000u;
+        uint8_t  row = 35;
+
+        textGotoXY(0, row++); textPrint("--- BENCHMARK (far_mvn vs peek24) ---");
+        textGotoXY(0, row++); textPrint("sz  mvn_ticks  peek_ticks");
+
+        for (uint8_t si = 0; si < size_count; ++si) {
+            uint16_t cnt = sizes[si];
+            uint32_t mvn_ticks;
+            uint32_t peek_ticks;
+
+            /* Prepare data in source buffer */
+            fill_pattern(s_src, cnt, (uint8_t)cnt);
+
+            /* far_mvn benchmark */
+            benchSetTimer1();
+            for (uint16_t i = 0; i < iters; ++i) {
+                far_mvn(HIMEM_BASE, (uint32_t)(uint16_t)(uintptr_t)s_src, cnt);
+            }
+            mvn_ticks = benchReadTimer1();
+
+            /* peek24 benchmark (byte-by-byte) */
+            benchSetTimer1();
+            for (uint16_t i = 0; i < iters; ++i) {
+                uint32_t base = HIMEM_BASE;
+                for (uint16_t j = 0; j < cnt; ++j) {
+                    s_dst[j] = peek24(base + j);
+                }
+            }
+            peek_ticks = benchReadTimer1();
+
+            snprintf(s_line, 64, "%3u %10lu %10lu", cnt,
+                     (unsigned long)mvn_ticks, (unsigned long)peek_ticks);
+            textGotoXY(0, row++); textPrint(s_line);
+        }
     }
 
     getchar();
