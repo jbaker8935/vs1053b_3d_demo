@@ -232,6 +232,23 @@ static const uint32_t short_wait_ticks[17u] = {
 
 static void schedule_wait(vgm_player_t *p, uint32_t ticks)
 {
+    /* Overrun compensation: T0 continues counting after its compare match
+     * fires (one-shot mode, no RECLEAR).  By the time schedule_wait() is
+     * called the counter reads last_period + overrun, where overrun is the
+     * wall-clock time consumed by OPL-register write wait-states and other
+     * dispatch overhead.  Subtracting that overrun from the next tick period
+     * keeps each inter-match interval accurate.
+     *
+     * The flag is set by vgm_service() on every T0 fire and cleared here so
+     * that only the first schedule_wait() after each fire is compensated;
+     * subsequent carry sub-waits (which do not involve OPL dispatching) are
+     * compensated solely by their own compare-match/fire cycle. */
+    if (p->flags & VGM_FLAG_COMPENSATE) {
+        uint32_t now = readTimer0_consistent();
+        uint32_t overrun = (now > p->last_period) ? (now - p->last_period) : 0u;
+        ticks = (ticks > overrun) ? ticks - overrun : 1u;
+        p->flags &= (uint8_t)~VGM_FLAG_COMPENSATE;
+    }
     if (ticks > VGM_MAX_WAIT_TICKS) {
         p->wait_carry = ticks - VGM_MAX_WAIT_TICKS;
         ticks = VGM_MAX_WAIT_TICKS;
@@ -378,6 +395,7 @@ vgm_status_t vgm_service(vgm_player_t *p)
          * and service any elapsed alarms. */
         timer_tick_elapsed(p->last_period);
         p->flags &= (uint8_t)~VGM_FLAG_TIMER_RUN;
+        p->flags |= VGM_FLAG_COMPENSATE;  /* arm overrun compensation */
 
         if (p->wait_carry > 0u) {
             /* More time to wait; schedule the remainder */

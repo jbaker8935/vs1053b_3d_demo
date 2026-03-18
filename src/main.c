@@ -70,7 +70,7 @@ static void vgm_init(const char *path) {
     if (!vgm_himem_load(path, VGM_HIMEM_BASE, &g_vgm_himem)) return;
     /* Read back first 4 bytes directly from high memory before vgm_open
      * so we can distinguish write-path vs read-path corruption. */
-    movedown24((uint32_t)(uint16_t)(uintptr_t)g_raw_hdr, VGM_HIMEM_BASE, 4u);
+    movedown24((uint32_t)(uintptr_t)g_raw_hdr, VGM_HIMEM_BASE, 4u);
     vgm_start();
 }
 
@@ -120,12 +120,12 @@ int main(int argc, char *argv[]) {
         /* Test A: flat write+readback (no bank crossing) */
         movedown24(VGM_HIMEM_BASE + 0x100uL,
                 (uint32_t)(uint16_t)(uintptr_t)wt_pat, 4u);
-        movedown24((uint32_t)(uint16_t)(uintptr_t)g_wt_flat,
+        movedown24((uint32_t)(uintptr_t)g_wt_flat,
                 VGM_HIMEM_BASE + 0x100uL, 4u);
         /* Test B: write 4 bytes straddling the 64 KiB boundary (bank 8/9) */
         movedown24(VGM_HIMEM_BASE + 0xFFFEuL,
                 (uint32_t)(uint16_t)(uintptr_t)wt_pat, 4u);
-        movedown24((uint32_t)(uint16_t)(uintptr_t)g_wt_xbank,
+        movedown24((uint32_t)(uintptr_t)g_wt_xbank,
                 VGM_HIMEM_BASE + 0xFFFEuL, 4u);
     }
     vgm_init(g_vgm_path);  /* start VGM after VS1053B is fully set up */
@@ -133,30 +133,6 @@ int main(int argc, char *argv[]) {
 
     demos_register();
     demo_engine_start(0);
-    /* TODO-DEBUG: remove once audio confirmed working.
-     * Row 22: movedown24 flat vs bank-crossing sanity checks
-     * Row 23: raw bytes from himem (after load, before vgm_open) vs buf (via vgm_open)
-     * Row 24: load size + open status
-     * Expected good: flat=deadbeef  xb=deadbeef  raw=56676d20  buf=56676d20 */
-    {
-        static char dbg[40];
-        snprintf(dbg, sizeof(dbg), "flat:%02x%02x%02x%02x xb:%02x%02x%02x%02x",
-                 g_wt_flat[0],  g_wt_flat[1],  g_wt_flat[2],  g_wt_flat[3],
-                 g_wt_xbank[0], g_wt_xbank[1], g_wt_xbank[2], g_wt_xbank[3]);
-        textGotoXY(0, 22);
-        textPrint(dbg);
-        snprintf(dbg, sizeof(dbg), "raw:%02x%02x%02x%02x buf:%02x%02x%02x%02x",
-                 g_raw_hdr[0],        g_raw_hdr[1],
-                 g_raw_hdr[2],        g_raw_hdr[3],
-                 g_vgm_player.buf[0], g_vgm_player.buf[1],
-                 g_vgm_player.buf[2], g_vgm_player.buf[3]);
-        textGotoXY(0, 23);
-        textPrint(dbg);
-        snprintf(dbg, sizeof(dbg), "sz=%lu op=%d",
-                 g_vgm_himem.size, (int)g_vgm_open);
-        textGotoXY(0, 24);
-        textPrint(dbg);
-    }
 
     setAlarm(TIMER_ALARM_GENERAL0, 1);
     while (true) {

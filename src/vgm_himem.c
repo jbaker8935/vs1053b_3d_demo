@@ -11,6 +11,8 @@
 #include "f256lib.h"
 #include "../include/vgm_himem.h"
 
+#define DEBUG_FIRST_CHUNK 0
+
 /* -----------------------------------------------------------------------
  * movedown24 -- cross-bank descending block move using the 65816 MVN instruction.
  * for overlapping regions where the src is higher than the dst
@@ -159,7 +161,7 @@ uint16_t vgm_himem_read(void *ctx, uint8_t *buf, uint16_t len)
     if ((uint32_t)len > avail) {
         len = (uint16_t)avail;
     }
-    movedown24((uint32_t)(uint16_t)(uintptr_t)buf, hm->base + hm->pos, len);
+    movedown24((uint32_t)(uintptr_t)buf, hm->base + hm->pos, len);
     hm->pos += (uint32_t)len;
     return len;
 }
@@ -187,7 +189,12 @@ void vgm_himem_seek(void *ctx, uint32_t offset)
  * ----------------------------------------------------------------------- */
 #pragma push_macro("EOF")
 #undef EOF
-static int16_t kernelReadC(uint8_t fd, void *buf, uint16_t nbytes)
+/* noinline: prevents the compiler from merging this function's body into
+ * vgm_himem_load.  When inlined, the optimizer sees the kernelCall leaf-asm
+ * clobbers ("a","c","v" only) and incorrectly keeps total.lo in the Y
+ * register across the kernel JSRs.  As a separate call the standard 6502 ABI
+ * applies, which treats A/X/Y as caller-saved and forces a proper spill. */
+static __attribute__((noinline)) int16_t kernelReadC(uint8_t fd, void *buf, uint16_t nbytes)
 {
     kernelArgs->file.read.stream = fd;
     kernelArgs->file.read.buflen = nbytes;
@@ -220,6 +227,12 @@ static int16_t kernelReadC(uint8_t fd, void *buf, uint16_t nbytes)
  * at a time) until EOF.  Each chunk is copied to high memory by movedown24.
  * The static staging buffer avoids a 255-byte local on the 6502 stack.
  * ----------------------------------------------------------------------- */
+/* noinline: this function is LTO-inlined into main() without this attribute.
+ * Combined with the large main() frame, the register allocator keeps the
+ * loop variable total.lo in Y across kernelReadC() calls, and if the kernel
+ * modifies Y (which the kernelCall clobber list does not declare), the
+ * destination address for each movedown24() call is corrupted. */
+__attribute__((noinline))
 bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
 {
     /* 255 bytes: maximum for kernelReadC (buflen is uint8_t).
@@ -246,11 +259,29 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
                        : 255u;
         n = kernelReadC(*fd, s_chunk, req);
         if (n <= 0) break;
-
+#if DEBUG_FIRST_CHUNK
+        if (total == 0u) {
+            /* Debug: verify the first chunk read from disk is real file data */
+            char dbg[64];
+            snprintf(dbg, sizeof(dbg), "\nvgm load read: %02x%02x%02x%02x (n=%u)",
+                     s_chunk[0], s_chunk[1], s_chunk[2], s_chunk[3], (unsigned)n);
+            textPrint(dbg);
+        }
+#endif
         movedown24(base_addr + total,
-                (uint32_t)(uint16_t)(uintptr_t)s_chunk,
+                (uint32_t)(uintptr_t)s_chunk,
                 (uint16_t)n);
-
+#if DEBUG_FIRST_CHUNK
+        if (total == 0u) {
+            /* Debug: read back the first bytes from hi-mem to confirm the copy */
+            uint8_t verify[4];
+            movedown24((uint32_t)(uintptr_t)verify, base_addr + total, 4u);
+            char dbg[64];
+            snprintf(dbg, sizeof(dbg), "\nvgm load write: %02x%02x%02x%02x\n",
+                     verify[0], verify[1], verify[2], verify[3]);
+            textPrint(dbg);
+        }
+#endif
         total += (uint32_t)(uint16_t)n;
     }
 

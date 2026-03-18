@@ -40,7 +40,14 @@ typedef struct {
  *
  * Returns true on success (at least one byte read), false if the file could
  * not be opened.
+ *
+ * __attribute__((noinline)) prevents LTO from merging this into its only
+ * caller (main).  Without it, the combined frame's register allocator keeps
+ * total.lo in Y register across kernel JSR calls whose clobber list omits
+ * "y", causing corrupted himem destination addresses for all but the first
+ * chunk.
  */
+__attribute__((noinline))
 bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx);
 
 /* vgm_read_fn-compatible callback: PEEK24 from high memory into buf. */

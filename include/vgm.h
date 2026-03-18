@@ -40,6 +40,7 @@
 #define VGM_FLAG_LOOPED       0x01u  /* loop point has been passed once */
 #define VGM_FLAG_TIMER_RUN    0x02u  /* T0 is counting a VGM wait period */
 #define VGM_FLAG_DONE         0x04u  /* playback complete */
+#define VGM_FLAG_COMPENSATE   0x08u  /* next schedule_wait() should subtract T0 overrun */
 
 typedef enum {
     VGM_PLAYING = 0,  /* actively dispatching commands */
