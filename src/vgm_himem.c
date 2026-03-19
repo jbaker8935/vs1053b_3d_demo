@@ -21,6 +21,46 @@ static void vgm_himem_pause_for_message(void)
     }
 }
 
+/* Read little-endian 32-bit value from a buffer. */
+static uint32_t vgm_himem_read_le32(const uint8_t *hdr, uint8_t off)
+{
+    return (uint32_t)hdr[off]
+         | ((uint32_t)hdr[off + 1u] << 8u)
+         | ((uint32_t)hdr[off + 2u] << 16u)
+         | ((uint32_t)hdr[off + 3u] << 24u);
+}
+
+/* Check whether a VGM file is compatible with the YMF262 (OPL3) player.
+ * Returns true if the file is compatible; false if it contains known
+ * unsupported chip targets such as the SN76489 PSG or YM2413 (OPLL).
+ */
+static bool vgm_himem_is_compatible_with_opl3(const uint8_t *hdr, uint16_t len)
+{
+    /* Need at least enough bytes to cover the clock fields. */
+    if (len < 0x14u) {
+        return true;
+    }
+
+    /* VGM header fields (LE32):
+     *   0x0C = SN76489 clock
+     *   0x10 = YM2413 clock
+     * If these are nonzero, the VGM likely targets those chips.
+     */
+    uint32_t sn76489_clk = vgm_himem_read_le32(hdr, 0x0Cu);
+    if (sn76489_clk != 0u) {
+        textPrint("\nVGM file targets SN76489 PSG, which is not supported by the YMF262 OPL3.\n");
+        return false;
+    }
+
+    uint32_t ym2413_clk = vgm_himem_read_le32(hdr, 0x10u);
+    if (ym2413_clk != 0u) {
+        textPrint("\nVGM file targets YM2413 (OPLL), which is not supported by the YMF262 OPL3.\n");
+        return false;
+    }
+
+    return true;
+}
+
 /* -----------------------------------------------------------------------
  * movedown24 -- cross-bank descending block move using the 65816 MVN instruction.
  * for overlapping regions where the src is higher than the dst
@@ -263,6 +303,11 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
             if (n < 4 || s_chunk[0] != 'V' || s_chunk[1] != 'g' ||
                 s_chunk[2] != 'm' || s_chunk[3] != ' ') {
                 textPrint("\nInvalid VGM header.  No audio will be played.\n");
+                fileClose(fd);
+                vgm_himem_pause_for_message();
+                return false;
+            }
+            if (!vgm_himem_is_compatible_with_opl3(s_chunk, (uint16_t)n)) {
                 fileClose(fd);
                 vgm_himem_pause_for_message();
                 return false;
