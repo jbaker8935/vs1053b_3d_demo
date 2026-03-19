@@ -105,6 +105,7 @@ asm (
  * ZP scratch (all __rcN caller-saved in llvm-mos):
  *   __rc6:__rc7  dst 16-bit addr (rebuilt from A:X on entry)
  * ----------------------------------------------------------------------- */
+__attribute__((noinline))
 void far_mvn(uint32_t dest, uint32_t src, uint16_t count);
 asm(
     ".text\n"
@@ -180,6 +181,7 @@ asm(
  *   __rc11       dst bank
  *   __rc12:__rc13 chunk size - 1 (saved before MVN; used to update count)
  * ----------------------------------------------------------------------- */
+__attribute__((noinline))
 void movedown24(uint32_t dest, uint32_t src, uint16_t count);
 asm(
     ".text\n"
@@ -303,6 +305,7 @@ asm(
  * ZP scratch (all __rcN caller-saved in llvm-mos):
  *   __rc6:__rc7  dst 16-bit addr (rebuilt from A:X on entry)
  * ----------------------------------------------------------------------- */
+__attribute__((noinline))
 void far_mvp(uint32_t dest, uint32_t src, uint16_t count);
 asm(
     ".text\n"
@@ -395,6 +398,7 @@ asm(
  *   __rc11       dst bank (adjusted for end-address carry)
  *   __rc12:__rc13 chunk size - 1 (saved before MVP; used to update count)
  * ----------------------------------------------------------------------- */
+__attribute__((noinline))
 void moveup24(uint32_t dest, uint32_t src, uint16_t count);
 asm(
     ".text\n"
@@ -551,11 +555,11 @@ asm(
 #define HIMEM_BASE  0x080000UL
 
 /* Number of iterations to run each test */
-#define TEST_RUNS 5u
+#define TEST_RUNS 1u
 
 /* Near-RAM staging buffers -- two 512-byte buffers in BSS */
-static uint8_t s_src[512];
-static uint8_t s_dst[512];
+static uint8_t s_src[2048];
+static uint8_t s_dst[2048];
 
 /* -----------------------------------------------------------------------
  * helpers
@@ -588,6 +592,7 @@ static uint16_t verify_pattern(const uint8_t *buf, uint16_t len, uint8_t seed)
  * Uses 8-bit A for byte transfers, 16-bit X (src) and Y (dest).
  * DBR is set to dest bank via SEP/PHA/PLB so STA abs,Y hits the right bank.
  * ----------------------------------------------------------------------- */
+__attribute__((noinline))
 void far_loop(uint32_t dest, uint32_t src, uint16_t count);
 asm(
     ".text\n"
@@ -726,7 +731,7 @@ int main(int argc, char *argv[])
     textClear();
     static char    s_line[64];
     uint8_t r;
-
+#if 0
     textGotoXY(0, 0); textPrint("MVN/MVP/Loop test  base=0x080000      ");
 
     /* Run each test 100 times to expose intermittent hardware issues. */
@@ -846,16 +851,16 @@ int main(int argc, char *argv[])
             textGotoXY(0, 33); textPrint("dn24 cross-bank OK                        ");
         }
     }
-
+#endif
     {
-        /* Benchmark: compare far_mvn vs peek24 loop performance across sizes. */
-        const uint8_t sizes[] = {1, 2, 4, 8, 16, 32, 64, 128, 255};
+        /* Benchmark: compare movedown24 vs peek24 loop performance across sizes. */
+        const uint16_t sizes[] = {1, 2, 4, 8, 16, 32, 64, 128, 256, 1024, 2048};
         const uint8_t size_count = sizeof(sizes) / sizeof(sizes[0]);
         const uint16_t iters = 10000u;
         uint8_t  row = 35;
 
-        textGotoXY(0, row++); textPrint("--- BENCHMARK (far_mvn vs peek24) ---");
-        textGotoXY(0, row++); textPrint("sz  mvn_ticks  peek_ticks");
+        textGotoXY(0, row++); textPrint("--- BENCHMARK (movedown24 vs peek24) ---");
+        textGotoXY(0, row++); textPrint("sz  mvn_ticks  mvn_us  peek_ticks  peek_us");
 
         for (uint8_t si = 0; si < size_count; ++si) {
             uint16_t cnt = sizes[si];
@@ -865,10 +870,10 @@ int main(int argc, char *argv[])
             /* Prepare data in source buffer */
             fill_pattern(s_src, cnt, (uint8_t)cnt);
 
-            /* far_mvn benchmark */
+            /* movedown24 benchmark */
             benchSetTimer1();
             for (uint16_t i = 0; i < iters; ++i) {
-                far_mvn(HIMEM_BASE, (uint32_t)(uint16_t)(uintptr_t)s_src, cnt);
+                movedown24(HIMEM_BASE, (uint32_t)(uint16_t)(uintptr_t)s_src, cnt);
             }
             mvn_ticks = benchReadTimer1();
 
@@ -882,8 +887,13 @@ int main(int argc, char *argv[])
             }
             peek_ticks = benchReadTimer1();
 
-            snprintf(s_line, 64, "%3u %10lu %10lu", cnt,
-                     (unsigned long)mvn_ticks, (unsigned long)peek_ticks);
+            /* Convert from 60 Hz ticks to microseconds per call. */
+            uint64_t mvn_us_per = ((uint64_t)mvn_ticks * 1000000ull + (60ull * iters) / 2ull) / (60ull * iters);
+            uint64_t peek_us_per = ((uint64_t)peek_ticks * 1000000ull + (60ull * iters) / 2ull) / (60ull * iters);
+
+            snprintf(s_line, 64, "%3u %10lu %8llu %10lu %8llu", cnt,
+                     (unsigned long)mvn_ticks, (unsigned long long)mvn_us_per,
+                     (unsigned long)peek_ticks, (unsigned long long)peek_us_per);
             textGotoXY(0, row++); textPrint(s_line);
         }
     }

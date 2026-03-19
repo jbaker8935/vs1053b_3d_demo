@@ -76,7 +76,7 @@ static const DemoEvent demo1_events[] = {
 };
 
 static const Demo demo1 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Simple Cube Primitive" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Simple Cube Primitive" },
     .event_count     = 5,
     .events          = demo1_events,
     .instance_count  = 1,
@@ -136,7 +136,7 @@ static const DemoEvent demo2_events[] = {
 };
 
 static const Demo demo2 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Multiple Objects" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Multiple Objects" },
     .event_count     = 2,
     .events          = demo2_events,
     .instance_count  = 4,
@@ -253,7 +253,7 @@ static const DemoEvent demo3_events[] = {
 };
 
 static const Demo demo3 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Anaconda Flyby" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Anaconda Flyby" },
     .event_count     = 4,
     .events          = demo3_events,
     .instance_count  = 4,
@@ -335,7 +335,7 @@ static const DemoEvent demo4_events[] = {
 };
 
 static const Demo demo4 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Anaconda Color Cycling" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Anaconda Color Cycling" },
     .event_count     = 2,
     .events          = demo4_events,
     .instance_count  = 3,
@@ -419,7 +419,7 @@ static const DemoEvent demo5_events[] = {
 };
 
 static const Demo demo5 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Scene with Occlusion" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Scene with Occlusion" },
     .event_count     = 5,
     .events          = demo5_events,
     .instance_count  = 4,

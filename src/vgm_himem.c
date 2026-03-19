@@ -12,6 +12,14 @@
 #include "../include/vgm_himem.h"
 
 #define DEBUG_FIRST_CHUNK 0
+#define VGM_HIMEM_MAX_BYTES 524288UL
+
+static void vgm_himem_pause_for_message(void)
+{
+    for (volatile uint32_t i = 0; i < 200000ul; i++) {
+        __asm__ volatile("nop");
+    }
+}
 
 /* -----------------------------------------------------------------------
  * movedown24 -- cross-bank descending block move using the 65816 MVN instruction.
@@ -235,10 +243,7 @@ static __attribute__((noinline)) int16_t kernelReadC(uint8_t fd, void *buf, uint
 __attribute__((noinline))
 bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
 {
-    /* 255 bytes: maximum for kernelReadC (buflen is uint8_t).
-     * Each request is capped to fit within the current 64 KiB bank so that
-     * movedown24's 16-bit Y register never wraps past 0xFFFF and overwrites data
-     * already written at the start of the same bank. */
+    /* 255 bytes: maximum for kernelReadC (buflen is uint8_t). */
     static uint8_t s_chunk[255];
 
     uint8_t *fd = fileOpen((char *)path, "r");
@@ -247,18 +252,23 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
         return false;
     }
 
+    textPrint("\nLoading audio ...");
+
     uint32_t total = 0u;
+    uint32_t chunks = 0u;
     int16_t  n;
     for (;;) {
-        /* off = low 16 bits of current write pointer (base is bank-aligned).
-         * We need off + req - 1 <= 0xFFFF, so req <= 0x10000 - off.
-         * Only limit when off > 0xFF01 (i.e., 255 bytes would wrap). */
-        uint16_t off = (uint16_t)total;
-        uint8_t  req = (off > (uint16_t)0xFF01u)
-                       ? (uint8_t)((uint16_t)0u - off)   /* = 0x10000 - off */
-                       : 255u;
-        n = kernelReadC(*fd, s_chunk, req);
+        n = kernelReadC(*fd, s_chunk, 255u);
         if (n <= 0) break;
+        if (total == 0u) {
+            if (n < 4 || s_chunk[0] != 'V' || s_chunk[1] != 'g' ||
+                s_chunk[2] != 'm' || s_chunk[3] != ' ') {
+                textPrint("\nInvalid VGM header.  No audio will be played.\n");
+                fileClose(fd);
+                vgm_himem_pause_for_message();
+                return false;
+            }
+        }
 #if DEBUG_FIRST_CHUNK
         if (total == 0u) {
             /* Debug: verify the first chunk read from disk is real file data */
@@ -268,6 +278,12 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
             textPrint(dbg);
         }
 #endif
+        if (total + (uint32_t)(uint16_t)n > VGM_HIMEM_MAX_BYTES) {
+            textPrint("\nVGM file exceeds 512K.  No audio will be played.\n");
+            fileClose(fd);
+            vgm_himem_pause_for_message();
+            return false;
+        }
         movedown24(base_addr + total,
                 (uint32_t)(uintptr_t)s_chunk,
                 (uint16_t)n);
@@ -283,9 +299,15 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
         }
 #endif
         total += (uint32_t)(uint16_t)n;
+        chunks += 1u;
+        if ((chunks % 200u) == 0u) {
+            textPrint(".");
+        }
     }
 
     fileClose(fd);
+
+    textPrint("\n");
 
     ctx->base = base_addr;
     ctx->size = total;

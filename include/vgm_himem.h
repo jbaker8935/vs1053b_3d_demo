@@ -39,7 +39,8 @@ typedef struct {
  * memory with POKE24 (W65C02S STA [zp] extended opcode).
  *
  * Returns true on success (at least one byte read), false if the file could
- * not be opened.
+ * not be opened, the first chunk does not begin with a valid VGM header, or
+ * the file exceeds the 512 KiB cache limit.
  *
  * __attribute__((noinline)) prevents LTO from merging this into its only
  * caller (main).  Without it, the combined frame's register allocator keeps

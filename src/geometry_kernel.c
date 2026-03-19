@@ -760,6 +760,10 @@ uint8_t scene_get_screen_edges(uint8_t n_objects,
         }
     }
 
+    /* Yield after the bulk coord readback so audio isn't starved across
+     * the potentially large screen + clip SCI burst before edge drawing. */
+    geometry_kernel_yield();
+
     uint8_t edges_written = 0;
 
     // Process each object's edges from the combined scene output.
@@ -848,6 +852,11 @@ uint8_t scene_get_screen_edges(uint8_t n_objects,
             draw_lines_asm(draw_layer);
             reset_line_list();
         }
+
+        /* Yield between objects: covers edge readback + two draw passes
+         * per object, keeping audio ticks from being starved on scenes
+         * with multiple objects. */
+        geometry_kernel_yield();
     }
 
     scene_disable();

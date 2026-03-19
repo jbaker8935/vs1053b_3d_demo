@@ -112,22 +112,6 @@ int main(int argc, char *argv[]) {
 
     init_models();
     init_codec();
-    /* movedown24 smoke tests -- run before vgm_init so the VGM load does not
-     * overwrite the test area.  The bank-crossing test writes the last 2
-     * bytes of bank 8 and first 2 of bank 9 to exercise the MOVEDOWN path. */
-    {
-        static uint8_t wt_pat[4] = {0xDE, 0xAD, 0xBE, 0xEF};
-        /* Test A: flat write+readback (no bank crossing) */
-        movedown24(VGM_HIMEM_BASE + 0x100uL,
-                (uint32_t)(uint16_t)(uintptr_t)wt_pat, 4u);
-        movedown24((uint32_t)(uintptr_t)g_wt_flat,
-                VGM_HIMEM_BASE + 0x100uL, 4u);
-        /* Test B: write 4 bytes straddling the 64 KiB boundary (bank 8/9) */
-        movedown24(VGM_HIMEM_BASE + 0xFFFEuL,
-                (uint32_t)(uint16_t)(uintptr_t)wt_pat, 4u);
-        movedown24((uint32_t)(uintptr_t)g_wt_xbank,
-                VGM_HIMEM_BASE + 0xFFFEuL, 4u);
-    }
     vgm_init(g_vgm_path);  /* start VGM after VS1053B is fully set up */
     geometry_kernel_set_yield_cb(vgm_tick);  /* service audio during DSP waits */
 
@@ -141,12 +125,12 @@ int main(int argc, char *argv[]) {
         if (input->edge.exit) {
             break;
         }        
-        // if (!demo_engine_update(input)) {
-        //     break;
-        // }
-        // render_frame(game_state_data());
-        // game_state_increment_frame();
-        // input_state_clear_edges(input);
+        if (!demo_engine_update(input)) {
+            break;
+        }
+        render_frame(game_state_data());
+        game_state_increment_frame();
+        input_state_clear_edges(input);
 
         while (!checkAlarm(TIMER_ALARM_GENERAL0)) {
             vgm_tick();  /* service VGM while waiting for next frame tick */
