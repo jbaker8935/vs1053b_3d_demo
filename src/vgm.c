@@ -392,13 +392,10 @@ vgm_status_t vgm_service(vgm_player_t *p)
         /* T0 fired (T0_CMP_CTR=0, no RECLEAR): the counter keeps running
          * past the compare value and cannot fire again until timer_set_period()
          * clears it with CTR_CLEAR for the next wait.  Clear the pending flag
-         * and service any elapsed alarms.
-         *
-         * Use the real elapsed tick count (which may be > last_period if
-         * dispatch was delayed) so that the general alarm subsystem stays in
-         * sync even when VGM processing temporarily blocks. */
+         * and service any elapsed alarms. */
+        // timer_tick_elapsed(p->last_period);
         uint32_t now = readTimer0_consistent();
-        timer_tick_elapsed(now);
+        timer_tick_elapsed(now);        
         p->flags &= (uint8_t)~VGM_FLAG_TIMER_RUN;
         p->flags |= VGM_FLAG_COMPENSATE;  /* arm overrun compensation */
 

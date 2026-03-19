@@ -41,7 +41,6 @@ void init_codec() {
 /* -----------------------------------------------------------------------
  * VGM playback state
  * ----------------------------------------------------------------------- */
-#define VGM_DEFAULT_PATH  "media/vgm/music.vgm"
 
 /* First 512 KiB extended RAM block used as VGM cache.  The full file is
  * loaded here before the animation loop so SD-card SPI reads never occur
@@ -95,7 +94,7 @@ static void init_models(void) {
 int main(int argc, char *argv[]) {
     /* Resolve VGM file path from command-line or fall back to default */
     g_vgm_path = (argc >= 2 && argv[1] != NULL && argv[1][0] != '\0')
-                 ? argv[1] : VGM_DEFAULT_PATH;
+                 ? argv[1] : NULL;
 
     f256Init();
     boostVSClock();
@@ -112,7 +111,20 @@ int main(int argc, char *argv[]) {
 
     init_models();
     init_codec();
-    vgm_init(g_vgm_path);  /* start VGM after VS1053B is fully set up */
+    if (g_vgm_path != NULL) {
+      vgm_init(g_vgm_path); /* start VGM after VS1053B is fully set up */
+      if (!g_vgm_open) {
+        textPrint("Failed to load VGM file (");
+        textPrint(g_vgm_path);
+        textPrint("); continuing without audio.");
+        setAlarm(TIMER_ALARM_GENERAL0, 120); /* two second exit wait */
+        while (true) {
+          if (checkAlarm(TIMER_ALARM_GENERAL0)) {
+            break;
+          }
+        }
+      }
+    }
     geometry_kernel_set_yield_cb(vgm_tick);  /* service audio during DSP waits */
 
     demos_register();

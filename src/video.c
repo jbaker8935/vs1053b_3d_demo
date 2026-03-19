@@ -100,17 +100,10 @@ void video_init(void) {
 }
 
 void video_wait_vblank(void) {
-	/* Wait for the next vblank *edge* (prevents skipping a vblank when the
-	 * caller arrives after row 482 has already started).
-	 *
-	 * Phase 1 – drain: if we're already inside vblank, spin until the active
-	 * scan restarts.  No yield here; vblank is only ~42 lines (~1.4 ms) so
-	 * the gap in audio service is inaudible, and calling vgm_service() during
-	 * vblank introduced timing-sensitive interactions that caused crashes.
-	 *
-	 * Phase 2 – wait: spin through the ~40 ms active-scan period calling the
-	 * yield callback so VGM ticks are serviced, matching the original behaviour.
-	 */
+	/* Spin on the raster row register (same logic as graphicsWaitVerticalBlank)
+	 * but call the geometry-kernel yield each iteration so the audio tick
+	 * is serviced throughout the blanking wait instead of being blocked for
+	 * up to a full frame period. */
 	extern void geometry_kernel_yield(void);
 	while (PEEKW(RAST_ROW_L) >= 482u) {}          /* drain current vblank  */
 	while (PEEKW(RAST_ROW_L) < 482u) {            /* wait for next vblank  */

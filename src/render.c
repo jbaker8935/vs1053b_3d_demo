@@ -37,7 +37,7 @@ void render_scene_aabb_overlay(uint8_t draw_layer) {
         uint8_t max_y;
 
         scene_get_object_meta(obj, &meta);
-        geometry_kernel_yield();  /* 10 SCI reads just completed; service audio */
+        geometry_kernel_yield();
         if (!scene_meta_has_visible_aabb(&meta)) {
             continue;
         }

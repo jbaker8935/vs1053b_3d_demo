@@ -248,7 +248,6 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
 
     uint8_t *fd = fileOpen((char *)path, "r");
     if (!fd) {
-        textPrint("\nfopen FAILED");
         return false;
     }
 
