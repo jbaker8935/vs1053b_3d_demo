@@ -14,13 +14,6 @@
 #define DEBUG_FIRST_CHUNK 0
 #define VGM_HIMEM_MAX_BYTES 524288UL
 
-static void vgm_himem_pause_for_message(void)
-{
-    for (volatile uint32_t i = 0; i < 200000ul; i++) {
-        __asm__ volatile("nop");
-    }
-}
-
 /* Read little-endian 32-bit value from a buffer. */
 static uint32_t vgm_himem_read_le32(const uint8_t *hdr, uint8_t off)
 {
@@ -48,13 +41,13 @@ static bool vgm_himem_is_compatible_with_opl3(const uint8_t *hdr, uint16_t len)
      */
     uint32_t sn76489_clk = vgm_himem_read_le32(hdr, 0x0Cu);
     if (sn76489_clk != 0u) {
-        textPrint("\nVGM file targets SN76489 PSG, which is not supported by the YMF262 OPL3.\n");
+        textPrint("VGM file targets SN76489 PSG, which is not supported by the YMF262 OPL3.\n");
         return false;
     }
 
     uint32_t ym2413_clk = vgm_himem_read_le32(hdr, 0x10u);
     if (ym2413_clk != 0u) {
-        textPrint("\nVGM file targets YM2413 (OPLL), which is not supported by the YMF262 OPL3.\n");
+        textPrint("VGM file targets YM2413 (OPLL), which is not supported by the YMF262 OPL3.\n");
         return false;
     }
 
@@ -290,9 +283,9 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
     if (!fd) {
         return false;
     }
-
-    textPrint("\nLoading audio ...");
-
+    textGotoXY(0, 0);
+    textPrint("Loading audio ...");
+    textGotoXY(0, 1);
     uint32_t total = 0u;
     uint32_t chunks = 0u;
     int16_t  n;
@@ -302,14 +295,12 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
         if (total == 0u) {
             if (n < 4 || s_chunk[0] != 'V' || s_chunk[1] != 'g' ||
                 s_chunk[2] != 'm' || s_chunk[3] != ' ') {
-                textPrint("\nInvalid VGM header.  No audio will be played.\n");
+                textPrint("Invalid VGM header.\n");
                 fileClose(fd);
-                vgm_himem_pause_for_message();
                 return false;
             }
             if (!vgm_himem_is_compatible_with_opl3(s_chunk, (uint16_t)n)) {
                 fileClose(fd);
-                vgm_himem_pause_for_message();
                 return false;
             }
         }
@@ -323,9 +314,8 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
         }
 #endif
         if (total + (uint32_t)(uint16_t)n > VGM_HIMEM_MAX_BYTES) {
-            textPrint("\nVGM file exceeds 512K.  No audio will be played.\n");
+            textPrint("VGM file exceeds 512K.\n");
             fileClose(fd);
-            vgm_himem_pause_for_message();
             return false;
         }
         movedown24(base_addr + total,
@@ -350,9 +340,6 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
     }
 
     fileClose(fd);
-
-    textPrint("\n");
-
     ctx->base = base_addr;
     ctx->size = total;
     ctx->pos  = 0u;
