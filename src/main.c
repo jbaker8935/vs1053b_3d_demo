@@ -70,6 +70,7 @@ static void vgm_init(const char *path) {
     /* Read back first 4 bytes directly from high memory before vgm_open
      * so we can distinguish write-path vs read-path corruption. */
     movedown24((uint32_t)(uintptr_t)g_raw_hdr, VGM_HIMEM_BASE, 4u);
+    if (!vgm_himem_is_playable(&g_vgm_himem)) return;
     vgm_start();
 }
 

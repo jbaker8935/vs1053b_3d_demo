@@ -285,7 +285,6 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
     }
     textGotoXY(0, 0);
     textPrint("Loading audio ...");
-    textGotoXY(0, 1);
     uint32_t total = 0u;
     uint32_t chunks = 0u;
     int16_t  n;
@@ -295,6 +294,7 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
         if (total == 0u) {
             if (n < 4 || s_chunk[0] != 'V' || s_chunk[1] != 'g' ||
                 s_chunk[2] != 'm' || s_chunk[3] != ' ') {
+                textGotoXY(0, 1);
                 textPrint("Invalid VGM header.\n");
                 fileClose(fd);
                 return false;
@@ -314,6 +314,7 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
         }
 #endif
         if (total + (uint32_t)(uint16_t)n > VGM_HIMEM_MAX_BYTES) {
+            textGotoXY(0, 1);
             textPrint("VGM file exceeds 512K.\n");
             fileClose(fd);
             return false;
@@ -338,10 +339,174 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
             textPrint(".");
         }
     }
-
+    textGotoXY(0, 1);
     fileClose(fd);
     ctx->base = base_addr;
     ctx->size = total;
     ctx->pos  = 0u;
     return (total > 0u);
+}
+
+/* -----------------------------------------------------------------------
+ * vgm_himem_is_playable -- scan loaded VGM for timing complexity.
+ *
+ * Walks the VGM data body counting sub-quantum wait commands: any 0x70-0x7F
+ * short-wait opcode (1-16 samples) or any 0x61 variable-wait with a count
+ * below VGM_SHORT_WAIT_QUANTUM (220 samples, the 200 Hz grid).
+ *
+ * Files produced by Furnace tracker at 100 Hz use only 441-sample 0x61 waits
+ * and pass with a count of zero.  Files with MIDI-accurate sub-sample timing
+ * (e.g. OPL2/3 recordings) have hundreds of short waits and are rejected.
+ *
+ * If the file exceeds VGM_SHORT_WAIT_MAX, a diagnostic message is printed and
+ * the function returns false.  The caller should then skip vgm_open() and let
+ * the demo run silently.  Quantize offline with tools/vgm_quantize.py first.
+ * ----------------------------------------------------------------------- */
+#define VGM_SHORT_WAIT_QUANTUM  220u   /* 200 Hz in 44100 Hz samples       */
+#define VGM_SHORT_WAIT_MAX      100u   /* short waits before rejection      */
+/* Scan only the first 4 KiB of VGM body data.  Hangover-style files have
+ * short waits every ~1 ms and will hit the threshold within the first KB.
+ * Furnace 100 Hz files have zero short waits and pass immediately.
+ * Scanning the full file on the 8 MHz 6502 takes 5-10 seconds for 300-460KB
+ * files.  4 KB scans in < 100 ms. */
+#define VGM_SCAN_MAX_BODY  4096u
+
+/* Scan buffer -- shared BSS, not on the 256-byte 6502 stack. */
+static uint8_t s_scan_buf[255u];
+
+bool vgm_himem_is_playable(const vgm_himem_ctx_t *ctx)
+{
+    if (ctx->size < 0x40u) return true;
+
+    /* Read header to find data_start. */
+    uint16_t hlen = (ctx->size < 0x60u) ? (uint16_t)ctx->size : 0x60u;
+    movedown24((uint32_t)(uintptr_t)s_scan_buf, ctx->base, hlen);
+
+    uint32_t data_start;
+    {
+        uint16_t ver = (uint16_t)s_scan_buf[0x08u] | ((uint16_t)s_scan_buf[0x09u] << 8u);
+        if (ver >= 0x150u && hlen >= 0x38u) {
+            uint32_t raw = vgm_himem_read_le32(s_scan_buf, 0x34u);
+            data_start = 0x34u + raw;
+            if (data_start < 0x40u) data_start = 0x40u;
+        } else {
+            data_start = 0x40u;
+        }
+    }
+
+    /* State machine states (stored in a uint8_t):
+     *   0  SC_OP      : next byte is a command opcode
+     *   1  SC_SKIPN   : skip skip_n more operand bytes, then back to SC_OP
+     *   2  SC_W16LO   : 0x61 wait: next byte is sample-count low
+     *   3  SC_W16HI   : 0x61 wait: next byte is sample-count high
+     *   4  SC_DB0     : data block (0x67): type byte
+     *   5  SC_DB1     : data block: compat byte
+     *   6  SC_DB2..9  : data block: size LE32 bytes 0..3
+     *  10  SC_DBSKIP  : skipping data block body (dblk bytes remain)
+     */
+    uint8_t  st     = 0u;
+    uint8_t  skip_n = 0u;
+    uint8_t  wlo    = 0u;
+    uint32_t dblk   = 0u;
+    uint16_t short_count = 0u;
+
+    uint32_t pos  = data_start;
+    uint32_t scan_end = data_start + VGM_SCAN_MAX_BODY;
+    if (scan_end > ctx->size) scan_end = ctx->size;
+    bool     done = false;
+
+    while (!done && pos < scan_end) {
+
+        /* Fast-skip data block body without byte-by-byte looping. */
+        if (st == 10u && dblk > 0u) {
+            uint32_t avail = scan_end - pos;
+            uint32_t step  = (dblk < avail) ? dblk : avail;
+            pos  += step;
+            dblk -= step;
+            if (dblk == 0u) st = 0u;
+            continue;
+        }
+
+        uint16_t n = (uint16_t)(scan_end - pos);
+        if (n > 255u) n = 255u;
+        movedown24((uint32_t)(uintptr_t)s_scan_buf, ctx->base + pos, n);
+        pos += (uint32_t)n;
+
+        for (uint16_t i = 0u; i < n && !done; ++i) {
+            uint8_t b = s_scan_buf[i];
+            switch (st) {
+            case 0u: /* SC_OP */
+                if (b >= 0x70u && b <= 0x7Fu) {
+                    /* Short wait: 1-16 samples */
+                    ++short_count;
+                } else if (b == 0x61u) {
+                    st = 2u; /* SC_W16LO */
+                } else if (b == 0x66u) {
+                    done = true;
+                } else if (b == 0x67u) {
+                    st = 4u; dblk = 0u; /* SC_DB0 */
+                } else if (b == 0x62u || b == 0x63u ||
+                           (b >= 0x80u && b <= 0x8Fu)) {
+                    /* 1-byte opcodes, no operands */
+                } else if ((b >= 0x30u && b <= 0x3Fu) ||
+                           b == 0x4Fu || b == 0x50u) {
+                    skip_n = 1u; st = 1u;
+                } else if ((b >= 0x40u && b <= 0x4Eu) ||
+                           (b >= 0x51u && b <= 0x5Fu) ||
+                           b == 0xA0u ||
+                           (b >= 0xB0u && b <= 0xC8u)) {
+                    skip_n = 2u; st = 1u;
+                } else if (b >= 0xC9u && b <= 0xDFu) {
+                    skip_n = 3u; st = 1u;
+                } else if (b >= 0xE0u) {
+                    skip_n = 4u; st = 1u;
+                }
+                /* unknown single-byte: stay SC_OP */
+                break;
+            case 1u: /* SC_SKIPN */
+                if (--skip_n == 0u) st = 0u;
+                break;
+            case 2u: /* SC_W16LO */
+                wlo = b; st = 3u;
+                break;
+            case 3u: /* SC_W16HI */ {
+                uint16_t v = (uint16_t)wlo | ((uint16_t)b << 8u);
+                if (v > 0u && v < VGM_SHORT_WAIT_QUANTUM) ++short_count;
+                st = 0u;
+                break;
+            }
+            case 4u: st = 5u; break;                          /* type byte  */
+            case 5u: st = 6u; break;                          /* compat     */
+            case 6u: dblk  = (uint32_t)b;        st = 7u; break;
+            case 7u: dblk |= (uint32_t)b << 8u;  st = 8u; break;
+            case 8u: dblk |= (uint32_t)b << 16u; st = 9u; break;
+            case 9u: /* size hi -- transition to body skip */
+                dblk |= (uint32_t)b << 24u;
+                if (dblk == 0u) { st = 0u; }
+                else {
+                    /* Skip remaining bytes in this chunk first */
+                    uint32_t in_chunk = (uint32_t)(n - i - 1u);
+                    if (dblk <= in_chunk) {
+                        i += (uint16_t)dblk;
+                        dblk = 0u;
+                        st = 0u;
+                    } else {
+                        dblk -= in_chunk;
+                        i = n;  /* exhaust chunk, outer loop fast-skips rest */
+                        st = 10u;
+                    }
+                }
+                break;
+            default: break;
+            }
+
+            if (short_count >= VGM_SHORT_WAIT_MAX) {
+                textPrint("VGM rejected: sub-sample timing requires offline quantization.\n");
+                textPrint("Run: python3 tools/vgm_quantize.py <file> --hz=200\n");
+                return false;
+            }
+        }
+    }
+
+    return true;
 }

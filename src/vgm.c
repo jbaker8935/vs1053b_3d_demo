@@ -45,6 +45,9 @@
  * variable-wait 0x61 command with this fixed value every tick.  Avoid the
  * hardware MULU call by detecting the common case at compile time. */
 #define TICKS_100HZ     ((uint32_t)441u * VGM_TICKS_PER_SAMPLE)  /* 0x3D5EB */
+/* 44100 / 200 Hz = 220.5 → rounded to 220 samples.  vgm_quantize.py emits
+ * 200 Hz sequences (default) that use 220-sample waits; avoid MULU here too. */
+#define TICKS_200HZ     ((uint32_t)220u * VGM_TICKS_PER_SAMPLE)  /* 0x1EAF4 */
 
 /* -----------------------------------------------------------------------
  * OPL3 helpers
@@ -448,12 +451,15 @@ vgm_status_t vgm_service(vgm_player_t *p)
 
         /* Variable wait: read a 16-bit sample count and convert to timer ticks.
          * 100 Hz sequences (Furnace default) always emit exactly 441 samples;
-         * special-case it to skip the hardware MULU call entirely. */
+         * 200 Hz quantized sequences (vgm_quantize default) emit 220 samples;
+         * special-case both to skip the hardware MULU call entirely. */
         case 0x61u: {
             uint16_t samples = buf_get_le16(p);
             p->samples_elapsed += (uint32_t)samples;
             schedule_wait(p,
-                (samples == 441u) ? TICKS_100HZ : samples_to_ticks(samples));
+                (samples == 441u) ? TICKS_100HZ :
+                (samples == 220u) ? TICKS_200HZ :
+                samples_to_ticks(samples));
             return VGM_WAITING;
         }
 
