@@ -11,7 +11,6 @@
 #include "f256lib.h"
 #include "../include/vgm_himem.h"
 
-#define DEBUG_FIRST_CHUNK 0
 #define VGM_HIMEM_MAX_BYTES 524288UL
 
 /* Read little-endian 32-bit value from a buffer. */
@@ -304,15 +303,6 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
                 return false;
             }
         }
-#if DEBUG_FIRST_CHUNK
-        if (total == 0u) {
-            /* Debug: verify the first chunk read from disk is real file data */
-            char dbg[64];
-            snprintf(dbg, sizeof(dbg), "\nvgm load read: %02x%02x%02x%02x (n=%u)",
-                     s_chunk[0], s_chunk[1], s_chunk[2], s_chunk[3], (unsigned)n);
-            textPrint(dbg);
-        }
-#endif
         if (total + (uint32_t)(uint16_t)n > VGM_HIMEM_MAX_BYTES) {
             textGotoXY(0, 1);
             textPrint("VGM file exceeds 512K.\n");
@@ -322,17 +312,6 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
         movedown24(base_addr + total,
                 (uint32_t)(uintptr_t)s_chunk,
                 (uint16_t)n);
-#if DEBUG_FIRST_CHUNK
-        if (total == 0u) {
-            /* Debug: read back the first bytes from hi-mem to confirm the copy */
-            uint8_t verify[4];
-            movedown24((uint32_t)(uintptr_t)verify, base_addr + total, 4u);
-            char dbg[64];
-            snprintf(dbg, sizeof(dbg), "\nvgm load write: %02x%02x%02x%02x\n",
-                     verify[0], verify[1], verify[2], verify[3]);
-            textPrint(dbg);
-        }
-#endif
         total += (uint32_t)(uint16_t)n;
         chunks += 1u;
         if ((chunks % 200u) == 0u) {

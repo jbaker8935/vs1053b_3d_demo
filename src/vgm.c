@@ -64,6 +64,20 @@ static void opl_write(uint16_t reg, uint8_t val)
     POKE(OPL_DATA, val);
 }
 
+/* Busy-wait for exactly `ticks` dot-clock ticks using the free-running T0
+ * counter.  Only called for micro-waits (≤ VGM_MIN_MICRO_WAIT_TICKS) during
+ * catch-up to preserve OPL3 stereo L/R write-pair spacing.
+ *
+ * The 24-bit masked subtraction handles counter wraparound correctly for any
+ * duration well under the full 24-bit period. */
+static void spin_wait(uint32_t ticks)
+{
+    uint32_t start = readTimer0_consistent();
+    while (((readTimer0_consistent() - start) & T0_MASK_TICKS) < ticks) {
+        /* busy wait */
+    }
+}
+
 /* Key-off all 18 OPL3 channels (9 per bank).
  * Uses the current key/fnum register value but clears the key-on bit.
  * This matches the behavior of the reference opl3_quietAll() implementation
@@ -233,25 +247,121 @@ static const uint32_t short_wait_ticks[17u] = {
  */
 #define VGM_MAX_WAIT_TICKS  T0_TICK_PERIOD_TICKS
 
-static void schedule_wait(vgm_player_t *p, uint32_t ticks)
+/* Minimum T0 period used as a bus-cycle gap during catch-up.
+ * Must be >= YMF262 T4 minimum (~506 dot-clock ticks); 1024 gives 2x margin. */
+#define VGM_CATCHUP_TICKS 1024u
+
+/* Maximum catch-up rate expressed as a divisor of the nominal wait period.
+ * During debt drain each VGM tick is compressed to at most
+ * 1/VGM_CATCHUP_DIVISOR of its nominal duration, never below VGM_CATCHUP_TICKS.
+ *
+ * furnace_bgm.vgm creates stereo depth by triggering the same note on an
+ * R-only channel one or two 441-sample (10 ms) ticks before the matching
+ * L-only channel note.  Compressing those ticks to VGM_CATCHUP_TICKS (40 µs)
+ * collapses the delay to <100 µs -- inaudible.  With divisor=10 each 10 ms
+ * tick takes at least 1 ms even during heavy catch-up, so a 2-tick stereo
+ * delay remains ~2 ms -- clearly perceivable. */
+#define VGM_CATCHUP_DIVISOR 10u
+
+/* Define to 1 to enable catch-up proportional compression (default behavior)
+ * Define to 0 to disable proportional timing compression and drain waits in
+ * nominal duration instead. */
+#define VGM_CATCHUP_COMPRESSION 0
+
+/* Micro-waits at or below this threshold are honoured in full (by busy-wait)
+ * even during catch-up.  Waits this short separate OPL3 port-0 / port-1 write
+ * pairs for stereo imaging; collapsing them destroys L/R channel separation.
+ * 4 samples × 571 ticks/sample = 2284 ticks ≈ 90 µs. */
+#define VGM_MIN_MICRO_WAIT_TICKS ((uint32_t)4u * VGM_TICKS_PER_SAMPLE)
+
+/* Schedules the next VGM wait.  Arms T0 and sets VGM_FLAG_TIMER_RUN.
+ *
+ * Returns true  if T0 was armed -- caller should return VGM_WAITING.
+ * Returns false if the wait was serviced inline via spin_wait() (micro-wait
+ * preserved for stereo separation) -- caller should continue dispatching.
+ *
+ * Two-stage overrun compensation:
+ *
+ * Stage 1 (COMPENSATE flag): on the first schedule_wait() after each T0 fire,
+ * read the free-running counter to measure how long dispatch took since the
+ * compare match.  This overrun is subtracted from the current wait.  If the
+ * wait is smaller than the overrun (the system was blocked for multiple VGM
+ * periods, e.g. during a complex render frame), the excess is saved in
+ * catchup_debt_ticks for stage 2.
+ *
+ * Stage 2 (debt drain): on every subsequent schedule_wait(), any accumulated
+ * debt is subtracted from the programmed period.  When debt covers the entire
+ * wait, a VGM_CATCHUP_TICKS micro-period is programmed so the OPL3 gets its
+ * required bus-cycle gap before the next write group.  This preserves event
+ * order and musical correctness while converging back to real time.
+ *
+ * Stereo micro-wait exemption: in both stages, when a wait would be collapsed
+ * but the original wait is ≤ VGM_MIN_MICRO_WAIT_TICKS, the wait is honoured
+ * in full via spin_wait() instead.  This keeps the L/R write-pair spacing the
+ * VGM author intended, even during catch-up.
+ *
+ * Proportional compression floor: compressed ticks are clamped to at least
+ * ticks/VGM_CATCHUP_DIVISOR (>= VGM_CATCHUP_TICKS).  This prevents stereo
+ * delay effects -- such as the R-channel note triggering 1-2 ticks (10-20 ms)
+ * before the L-channel note in furnace_bgm.vgm -- from collapsing below
+ * audible thresholds during catch-up.
+ *
+ * Waits longer than one frame (VGM_MAX_WAIT_TICKS) are split so that the
+ * general alarm subsystem is serviced at least once per frame. */
+static bool schedule_wait(vgm_player_t *p, uint32_t ticks)
 {
-    /* Overrun compensation: T0 continues counting after its compare match
-     * fires (one-shot mode, no RECLEAR).  By the time schedule_wait() is
-     * called the counter reads last_period + overrun, where overrun is the
-     * wall-clock time consumed by OPL-register write wait-states and other
-     * dispatch overhead.  Subtracting that overrun from the next tick period
-     * keeps each inter-match interval accurate.
-     *
-     * The flag is set by vgm_service() on every T0 fire and cleared here so
-     * that only the first schedule_wait() after each fire is compensated;
-     * subsequent carry sub-waits (which do not involve OPL dispatching) are
-     * compensated solely by their own compare-match/fire cycle. */
+    /* Stage 1: measure dispatch overrun after a real T0 fire. */
     if (p->flags & VGM_FLAG_COMPENSATE) {
         uint32_t now = readTimer0_consistent();
         uint32_t overrun = (now > p->last_period) ? (now - p->last_period) : 0u;
-        ticks = (ticks > overrun) ? ticks - overrun : 1u;
+        bool was_catching_up = (p->catchup_debt_ticks > 0u);
+        if (overrun >= ticks) {
+            /* Overrun exceeds this entire wait; save excess as future debt. */
+            p->catchup_debt_ticks += overrun - ticks;
+            if (ticks <= VGM_MIN_MICRO_WAIT_TICKS && !was_catching_up) {
+                /* Preserve micro-wait only when not already in catch-up,
+                 * so we don't stall more when the player is already lagging. */
+                p->flags &= (uint8_t)~VGM_FLAG_COMPENSATE;
+                spin_wait(ticks);
+                return false;
+            }
+#if VGM_CATCHUP_COMPRESSION
+            /* Proportional floor: compress to ticks/DIVISOR so stereo delay
+             * effects remain audible even during catch-up. */
+            ticks = (ticks / (uint32_t)VGM_CATCHUP_DIVISOR > (uint32_t)VGM_CATCHUP_TICKS)
+                  ? ticks / (uint32_t)VGM_CATCHUP_DIVISOR : (uint32_t)VGM_CATCHUP_TICKS;
+#else
+            /* Catch-up compression disabled: use full tick duration. */
+#endif
+        } else {
+            ticks -= overrun;
+        }
         p->flags &= (uint8_t)~VGM_FLAG_COMPENSATE;
     }
+    /* Stage 2: drain any accumulated catch-up debt from previous late fires. */
+    if (p->catchup_debt_ticks > 0u) {
+        if (p->catchup_debt_ticks >= ticks) {
+            p->catchup_debt_ticks -= ticks;
+#if VGM_CATCHUP_COMPRESSION
+            if (ticks <= VGM_MIN_MICRO_WAIT_TICKS) {
+                /* During active catch-up, avoid extra busy-waiting.  Drain
+                 * debt faster by compressing micro waits rather than spinning. */
+                ticks = (ticks / (uint32_t)VGM_CATCHUP_DIVISOR > (uint32_t)VGM_CATCHUP_TICKS)
+                      ? ticks / (uint32_t)VGM_CATCHUP_DIVISOR : (uint32_t)VGM_CATCHUP_TICKS;
+            } else {
+                /* Proportional floor: compress to ticks/DIVISOR so stereo delay
+                 * effects remain audible even during catch-up. */
+                ticks = (ticks / (uint32_t)VGM_CATCHUP_DIVISOR > (uint32_t)VGM_CATCHUP_TICKS)
+                      ? ticks / (uint32_t)VGM_CATCHUP_DIVISOR : (uint32_t)VGM_CATCHUP_TICKS;
+            }
+#endif
+        } else {
+            ticks -= p->catchup_debt_ticks;
+            p->catchup_debt_ticks = 0u;
+        }
+    }
+    /* Frame-cap: split waits longer than one frame so the general alarm
+     * subsystem is serviced at least once per frame (see VGM_MAX_WAIT_TICKS). */
     if (ticks > VGM_MAX_WAIT_TICKS) {
         p->wait_carry = ticks - VGM_MAX_WAIT_TICKS;
         ticks = VGM_MAX_WAIT_TICKS;
@@ -261,6 +371,7 @@ static void schedule_wait(vgm_player_t *p, uint32_t ticks)
     p->last_period = ticks;
     timer_set_period(ticks);
     p->flags |= VGM_FLAG_TIMER_RUN;
+    return true;
 }
 
 /* -----------------------------------------------------------------------
@@ -299,14 +410,15 @@ vgm_status_t vgm_open(vgm_player_t *p,
     p->opl_mode       = 2u;
     p->buf_pos        = 0u;
     p->buf_len        = 0u;
-    p->wait_carry     = 0u;
-    p->last_period    = 0u;
-    p->samples_elapsed = 0u;
-    p->total_samples  = 0u;
-    p->loop_offset    = 0u;
-    p->data_start     = 0u;
-    p->stream_pos     = 0u;
-    p->read_fn        = read_fn;
+    p->wait_carry          = 0u;
+    p->catchup_debt_ticks  = 0u;
+    p->last_period         = 0u;
+    p->samples_elapsed     = 0u;
+    p->total_samples       = 0u;
+    p->loop_offset         = 0u;
+    p->data_start          = 0u;
+    p->stream_pos          = 0u;
+    p->read_fn             = read_fn;
     p->seek_fn        = seek_fn;
     p->io_ctx         = io_ctx;
 
@@ -353,14 +465,52 @@ vgm_status_t vgm_open(vgm_player_t *p,
     }
 
     /* OPL mode detection.
-     * YM3812 (OPL2) clock at 0x50; YMF262 (OPL3) clock at 0x54.
-     * Both are LE32; non-zero means the chip is present. */
-    if (n >= 0x58u) {
-        uint32_t ymf262_clock = hdr_le32(p->buf, 0x54u);
+     * VGM spec: YM3812 (OPL2) clock at header 0x50; YMF262 (OPL3) clock at
+     * header 0x5C.  Both are LE32; non-zero means the chip is present.
+     * n >= 0x60 guarantees we read the full 96-byte header block. */
+    if (n >= 0x60u) {
+        uint32_t ymf262_clock = hdr_le32(p->buf, 0x5Cu);
         if (ymf262_clock != 0u) {
             p->opl_mode = 3u;
         }
-        /* YM3812-only files leave 0x54 at zero; opl_mode stays 2 */
+        /* YM3812-only files leave 0x5C at zero; opl_mode stays 2 */
+    }
+
+    /* Some valid OPL3 VGM files omit the YMF262 clock field but use
+     * 0x5E/0x5F commands in the data stream. Detect this case and force
+     * OPL3 mode so both banks are enabled. */
+    if (p->opl_mode == 2u) {
+        uint32_t scan_pos    = p->data_start;
+        uint32_t scan_end    = scan_pos + 4096u;
+        uint8_t  scan_buf[64];
+        bool     opl3_used   = false;
+
+        p->seek_fn(p->io_ctx, p->data_start);
+        p->stream_pos = p->data_start;
+        p->buf_len = 0u;
+        p->buf_pos = 0u;
+
+        while (scan_pos < scan_end) {
+            uint16_t to_read = (uint16_t)(scan_end - scan_pos);
+            if (to_read > sizeof(scan_buf)) {
+                to_read = (uint16_t)sizeof(scan_buf);
+            }
+            uint16_t got = p->read_fn(p->io_ctx, scan_buf, to_read);
+            if (got == 0u) break;
+            for (uint16_t i = 0u; i < got; ++i) {
+                if (scan_buf[i] == 0x5Eu || scan_buf[i] == 0x5Fu) {
+                    opl3_used = true;
+                    break;
+                }
+            }
+            if (opl3_used) break;
+            scan_pos += got;
+            p->stream_pos += got;
+        }
+
+        if (opl3_used) {
+            p->opl_mode = 3u;
+        }
     }
 
     /* Initialise the OPL chip */
@@ -394,18 +544,17 @@ vgm_status_t vgm_service(vgm_player_t *p)
         }
         /* T0 fired (T0_CMP_CTR=0, no RECLEAR): the counter keeps running
          * past the compare value and cannot fire again until timer_set_period()
-         * clears it with CTR_CLEAR for the next wait.  Clear the pending flag
-         * and service any elapsed alarms. */
-        // timer_tick_elapsed(p->last_period);
-        uint32_t now = readTimer0_consistent();
-        timer_tick_elapsed(now);        
+         * clears it with CTR_CLEAR for the next wait.  Read the current counter
+         * value to credit elapsed real time to the general alarm subsystem,
+         * then clear the timer-run flag. */
+        timer_tick_elapsed(p->last_period);
         p->flags &= (uint8_t)~VGM_FLAG_TIMER_RUN;
         p->flags |= VGM_FLAG_COMPENSATE;  /* arm overrun compensation */
 
         if (p->wait_carry > 0u) {
-            /* More time to wait; schedule the remainder */
-            schedule_wait(p, p->wait_carry);
-            return VGM_WAITING;
+            /* Remainder of a split wait: schedule next chunk. */
+            if (schedule_wait(p, p->wait_carry)) { return VGM_WAITING; }
+            /* Micro-wait done inline; fall through to dispatch. */
         }
         /* Fall through to dispatch the next command(s). */
     }
@@ -456,23 +605,23 @@ vgm_status_t vgm_service(vgm_player_t *p)
         case 0x61u: {
             uint16_t samples = buf_get_le16(p);
             p->samples_elapsed += (uint32_t)samples;
-            schedule_wait(p,
-                (samples == 441u) ? TICKS_100HZ :
-                (samples == 220u) ? TICKS_200HZ :
-                samples_to_ticks(samples));
-            return VGM_WAITING;
+            if (schedule_wait(p,
+                    (samples == 441u) ? TICKS_100HZ :
+                    (samples == 220u) ? TICKS_200HZ :
+                    samples_to_ticks(samples))) { return VGM_WAITING; }
+            break; /* micro-wait done inline */
         }
 
         /* Fixed waits: use precomputed tick constants -- no multiply needed. */
         case 0x62u:  /* Wait 735 samples (1/60 s, NTSC frame) */
             p->samples_elapsed += 735u;
-            schedule_wait(p, TICKS_ONE_NTSC);
-            return VGM_WAITING;
+            if (schedule_wait(p, TICKS_ONE_NTSC)) { return VGM_WAITING; }
+            break; /* micro-wait done inline (never triggered in practice) */
 
         case 0x63u:  /* Wait 882 samples (1/50 s, PAL frame) */
             p->samples_elapsed += 882u;
-            schedule_wait(p, TICKS_ONE_PAL);
-            return VGM_WAITING;
+            if (schedule_wait(p, TICKS_ONE_PAL)) { return VGM_WAITING; }
+            break; /* micro-wait done inline (never triggered in practice) */
 
         /* Short waits: 0x70-0x7F → wait (cmd & 0x0F)+1 samples.
          * Lookup table avoids per-call multiply. */
@@ -482,8 +631,8 @@ vgm_status_t vgm_service(vgm_player_t *p)
         case 0x7Cu: case 0x7Du: case 0x7Eu: case 0x7Fu: {
             uint8_t s = (cmd & 0x0Fu) + 1u;
             p->samples_elapsed += (uint32_t)s;
-            schedule_wait(p, short_wait_ticks[s]);
-            return VGM_WAITING;
+            if (schedule_wait(p, short_wait_ticks[s])) { return VGM_WAITING; }
+            break; /* micro-wait (s≤4) done inline */
         }
 
         /* YM2612 PCM slot: 0x80-0x8F → wait (cmd & 0x0F) samples (no OPL write).
@@ -496,8 +645,8 @@ vgm_status_t vgm_service(vgm_player_t *p)
             uint8_t s = cmd & 0x0Fu;
             if (s > 0u) {
                 p->samples_elapsed += (uint32_t)s;
-                schedule_wait(p, short_wait_ticks[s]);
-                return VGM_WAITING;
+                if (schedule_wait(p, short_wait_ticks[s])) { return VGM_WAITING; }
+                /* micro-wait (s≤4) done inline */
             }
             break;
         }
