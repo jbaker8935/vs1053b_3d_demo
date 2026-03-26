@@ -323,14 +323,17 @@ static void dbg_report(const char *tag,
  * OPL3 helpers
  * ----------------------------------------------------------------------- */
 
-/* Write one OPL3 register.  Selects port 0 (reg < 0x100) or port 1. */
-static void opl_write(uint16_t reg, uint8_t val)
+/* Write one OPL3 register on port 0. */
+static void opl_write_port0(uint8_t reg, uint8_t val)
 {
-    if (reg & 0x100u) {
-        POKE(OPL_ADDR_H, (uint8_t)(reg & 0xFFu));
-    } else {
-        POKE(OPL_ADDR_L, (uint8_t)(reg & 0xFFu));
-    }
+    POKE(OPL_ADDR_L, reg);
+    POKE(OPL_DATA, val);
+}
+
+/* Write one OPL3 register on port 1. */
+static void opl_write_port1(uint8_t reg, uint8_t val)
+{
+    POKE(OPL_ADDR_H, reg);
     POKE(OPL_DATA, val);
 }
 
@@ -356,10 +359,10 @@ static void opl_silence(void)
 {
     uint8_t i;
     for (i = 0u; i < 9u; ++i) {
-        opl_write(0x0B0u + i, 0xDFu);  /* key-off, keep block/fnum high */
+        opl_write_port0((uint8_t)(0xB0u + i), 0xDFu);  /* key-off, keep block/fnum high */
     }
     for (i = 0u; i < 9u; ++i) {
-        opl_write(0x1B0u + i, 0xDFu);  /* key-off, keep block/fnum high */
+        opl_write_port1((uint8_t)(0xB0u + i), 0xDFu);  /* key-off, keep block/fnum high */
     }
 }
 
@@ -372,21 +375,21 @@ static void opl_init(uint8_t mode)
     uint8_t i;
 
     /* Enable waveform select (required even in OPL2 mode) */
-    opl_write(0x001u, 0x20u);
+    opl_write_port0(0x01u, 0x20u);
 
     /* Disable four-operator modes */
-    opl_write(0x104u, 0x00u);
+    opl_write_port1(0x04u, 0x00u);
 
     /* OPL3 enable / disable */
-    opl_write(0x105u, (mode == 3u) ? 0x01u : 0x00u);
+    opl_write_port1(0x05u, (mode == 3u) ? 0x01u : 0x00u);
 
     /* Percussion/vibrato/tremolo off */
-    opl_write(0x0BDu, 0x00u);
+    opl_write_port0(0xBDu, 0x00u);
 
     /* Enable left+right output on all channels (both banks) */
     for (i = 0u; i < 9u; ++i) {
-        opl_write(0x0C0u + i, 0x30u);
-        opl_write(0x1C0u + i, 0x30u);
+        opl_write_port0((uint8_t)(0xC0u + i), 0x30u);
+        opl_write_port1((uint8_t)(0xC0u + i), 0x30u);
     }
 
     /* Key-off all channels */
@@ -535,13 +538,31 @@ static const uint32_t short_wait_ticks[17u] = {
  * 4 samples × 571 ticks/sample = 2284 ticks ≈ 90 µs. */
 #define VGM_MIN_MICRO_WAIT_TICKS ((uint32_t)4u * VGM_TICKS_PER_SAMPLE)
 
-/* Schedules the next VGM wait.  Arms T0 and sets VGM_FLAG_TIMER_RUN.
- *
- * Returns true  if T0 was armed -- caller should return VGM_WAITING.
- * Returns false if the wait was serviced inline via spin_wait() (micro-wait
- * preserved for stereo separation) -- caller should continue dispatching.
- *
- * Two-stage overrun compensation:
+static __attribute__((always_inline)) bool schedule_wait_arm(uint32_t ticks)
+{
+    /* Frame-cap: split waits longer than one frame so the general alarm
+     * subsystem is serviced at least once per frame (see VGM_MAX_WAIT_TICKS). */
+    if (ticks > VGM_MAX_WAIT_TICKS) {
+        vgm_wait_carry = ticks - VGM_MAX_WAIT_TICKS;
+        ticks = VGM_MAX_WAIT_TICKS;
+    } else {
+        vgm_wait_carry = 0u;
+    }
+    vgm_last_period = ticks;
+    vgm_wait_armed_period = ticks;
+    vgm_wait_snap_post_valid = 0u;
+    vgm_wait_snap_hit_valid = 0u;
+    vgm_wait_snap_arm_valid = 0u;
+    timer_set_period(ticks);
+#if VGM_DIAGNOSTIC_TRACE
+    dbg_capture_wait_snapshot(&vgm_wait_snap_arm);
+    vgm_wait_snap_arm_valid = 1u;
+#endif
+    vgm_flags |= VGM_FLAG_TIMER_RUN;
+    return true;
+}
+
+/* Two-stage overrun compensation.
  *
  * Stage 1 (COMPENSATE flag): on the first schedule_wait() after each T0 fire,
  * read the free-running counter to measure how long dispatch took since the
@@ -565,11 +586,8 @@ static const uint32_t short_wait_ticks[17u] = {
  * ticks/VGM_CATCHUP_DIVISOR (>= VGM_CATCHUP_TICKS).  This prevents stereo
  * delay effects -- such as the R-channel note triggering 1-2 ticks (10-20 ms)
  * before the L-channel note in furnace_bgm.vgm -- from collapsing below
- * audible thresholds during catch-up.
- *
- * Waits longer than one frame (VGM_MAX_WAIT_TICKS) are split so that the
- * general alarm subsystem is serviced at least once per frame. */
-static bool schedule_wait(vgm_player_t *p, uint32_t ticks)
+ * audible thresholds during catch-up. */
+static bool schedule_wait_catchup(vgm_player_t *p, uint32_t ticks)
 {
     /* Stage 1: measure dispatch overrun after a real T0 fire. */
     (void)p;
@@ -620,26 +638,22 @@ static bool schedule_wait(vgm_player_t *p, uint32_t ticks)
         }
     }
 
-    /* Frame-cap: split waits longer than one frame so the general alarm
-     * subsystem is serviced at least once per frame (see VGM_MAX_WAIT_TICKS). */
-    if (ticks > VGM_MAX_WAIT_TICKS) {
-        vgm_wait_carry = ticks - VGM_MAX_WAIT_TICKS;
-        ticks = VGM_MAX_WAIT_TICKS;
-    } else {
-        vgm_wait_carry = 0u;
+    return schedule_wait_arm(ticks);
+}
+
+/* Schedules the next VGM wait.  Arms T0 and sets VGM_FLAG_TIMER_RUN.
+ *
+ * Returns true  if T0 was armed -- caller should return VGM_WAITING.
+ * Returns false if the wait was serviced inline via spin_wait() (micro-wait
+ * preserved for stereo separation) -- caller should continue dispatching.
+ */
+static bool schedule_wait(vgm_player_t *p, uint32_t ticks)
+{
+    if (__builtin_expect((vgm_flags & VGM_FLAG_COMPENSATE) == 0u &&
+                         vgm_catchup_debt_ticks == 0u, 1)) {
+        return schedule_wait_arm(ticks);
     }
-    vgm_last_period = ticks;
-    vgm_wait_armed_period = ticks;
-    vgm_wait_snap_post_valid = 0u;
-    vgm_wait_snap_hit_valid = 0u;
-    vgm_wait_snap_arm_valid = 0u;
-    timer_set_period(ticks);
-#if VGM_DIAGNOSTIC_TRACE
-    dbg_capture_wait_snapshot(&vgm_wait_snap_arm);
-    vgm_wait_snap_arm_valid = 1u;
-#endif
-    vgm_flags |= VGM_FLAG_TIMER_RUN;
-    return true;
+    return schedule_wait_catchup(p, ticks);
 }
 
 /* -----------------------------------------------------------------------
@@ -658,6 +672,13 @@ static uint32_t hdr_le32(const uint8_t *hdr, uint8_t off)
 static uint16_t hdr_le16(const uint8_t *hdr, uint8_t off)
 {
     return (uint16_t)hdr[off] | ((uint16_t)hdr[off + 1u] << 8u);
+}
+
+static inline bool vgm_end_of_stream(void)
+{
+    return (vgm_total_samples > 0u &&
+            vgm_samples_elapsed >= vgm_total_samples &&
+            vgm_loop_offset == 0u);
 }
 
 /* -----------------------------------------------------------------------
@@ -809,6 +830,7 @@ vgm_status_t vgm_service(vgm_player_t *p)
     uint8_t cmd;
     uint8_t reg, val;
     uint32_t skip32;
+    bool check_end_of_data = false;
 
     /* Already done? */
     if (vgm_flags & VGM_FLAG_DONE) {
@@ -849,10 +871,13 @@ vgm_status_t vgm_service(vgm_player_t *p)
 #endif
         vgm_flags &= (uint8_t)~VGM_FLAG_TIMER_RUN;
         vgm_flags |= VGM_FLAG_COMPENSATE;  /* arm overrun compensation */
+        check_end_of_data = true;
 
         if (vgm_wait_carry > 0u) {
             /* Remainder of a split wait: schedule next chunk. */
-            if (schedule_wait(p, vgm_wait_carry)) { return VGM_WAITING; }
+            uint32_t carry_ticks = vgm_wait_carry;
+            vgm_wait_carry = 0u;
+            if (schedule_wait(p, carry_ticks)) { return VGM_WAITING; }
             /* Micro-wait done inline; fall through to dispatch. */
         }
         /* Fall through to dispatch the next command(s). */
@@ -861,12 +886,11 @@ vgm_status_t vgm_service(vgm_player_t *p)
     /* ----- Command dispatch loop ----- */
     for (;;) {
 
-        /* End-of-stream guard via sample count */
-        if (vgm_total_samples > 0u &&
-            vgm_samples_elapsed >= vgm_total_samples &&
-            vgm_loop_offset == 0u) {
+        /* End-of-stream guard only after a sample-advancing wait. */
+        if (check_end_of_data && vgm_end_of_stream()) {
             goto end_of_data;
         }
+        check_end_of_data = false;
 
         /* Buffer exhaustion guard */
         if (vgm_buf_pos >= vgm_buf_len) {
@@ -887,13 +911,13 @@ vgm_status_t vgm_service(vgm_player_t *p)
         case 0x5Eu:  /* YMF262 port 0 register write */
             reg = buf_get(p);
             val = buf_get(p);
-            opl_write((uint16_t)reg, val);
+            opl_write_port0(reg, val);
             break;
 
         case 0x5Fu:  /* YMF262 port 1 register write */
             reg = buf_get(p);
             val = buf_get(p);
-            opl_write(0x100u | (uint16_t)reg, val);
+            opl_write_port1(reg, val);
             break;
 
         /* ---- Wait commands ---- */
@@ -909,6 +933,7 @@ vgm_status_t vgm_service(vgm_player_t *p)
                     (samples == 441u) ? TICKS_100HZ :
                     (samples == 220u) ? TICKS_200HZ :
                     samples_to_ticks(samples))) { return VGM_WAITING; }
+            check_end_of_data = true;
             break; /* micro-wait done inline */
         }
 
@@ -916,11 +941,13 @@ vgm_status_t vgm_service(vgm_player_t *p)
         case 0x62u:  /* Wait 735 samples (1/60 s, NTSC frame) */
             vgm_samples_elapsed += 735u;
             if (schedule_wait(p, TICKS_ONE_NTSC)) { return VGM_WAITING; }
+            check_end_of_data = true;
             break; /* micro-wait done inline (never triggered in practice) */
 
         case 0x63u:  /* Wait 882 samples (1/50 s, PAL frame) */
             vgm_samples_elapsed += 882u;
             if (schedule_wait(p, TICKS_ONE_PAL)) { return VGM_WAITING; }
+            check_end_of_data = true;
             break; /* micro-wait done inline (never triggered in practice) */
 
         /* Short waits: 0x70-0x7F → wait (cmd & 0x0F)+1 samples.
@@ -932,6 +959,7 @@ vgm_status_t vgm_service(vgm_player_t *p)
             uint8_t s = (cmd & 0x0Fu) + 1u;
             vgm_samples_elapsed += (uint32_t)s;
             if (schedule_wait(p, short_wait_ticks[s])) { return VGM_WAITING; }
+            check_end_of_data = true;
             break; /* micro-wait (s≤4) done inline */
         }
 
@@ -946,6 +974,7 @@ vgm_status_t vgm_service(vgm_player_t *p)
             if (s > 0u) {
                 vgm_samples_elapsed += (uint32_t)s;
                 if (schedule_wait(p, short_wait_ticks[s])) { return VGM_WAITING; }
+                check_end_of_data = true;
                 /* micro-wait (s≤4) done inline */
             }
             break;
@@ -1059,16 +1088,16 @@ void vgm_close(vgm_player_t *p)
      * guaranteeing silence regardless of ADSR state or release rate.
      * opl_init() restores these to 0x30 when the player is re-opened. */
     for (i = 0u; i < 9u; ++i) {
-        opl_write(0x0C0u + i, 0x00u);
-        opl_write(0x1C0u + i, 0x00u);
+        opl_write_port0((uint8_t)(0xC0u + i), 0x00u);
+        opl_write_port1((uint8_t)(0xC0u + i), 0x00u);
     }
 
     /* Also max-attenuate all operator TL registers and key-off all channels
      * so the chip is in a clean state for any subsequent re-initialisation.
      * Writes to the four unused slots (0x46,0x47,0x4E,0x4F) are no-ops. */
     for (i = 0u; i <= 0x15u; ++i) {
-        opl_write(0x040u + (uint16_t)i, 0x3Fu);
-        opl_write(0x140u + (uint16_t)i, 0x3Fu);
+        opl_write_port0((uint8_t)(0x40u + i), 0x3Fu);
+        opl_write_port1((uint8_t)(0x40u + i), 0x3Fu);
     }
     opl_silence();
 

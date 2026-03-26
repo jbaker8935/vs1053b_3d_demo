@@ -45,7 +45,7 @@ return value;
 }
 
 void game_state_update_3d(InputState *input) {
-int16_t speed = 70;
+int16_t speed = 35;
 
 uint8_t yaw = g_ctx.wireframe.camera.yaw;
 uint8_t pitch = g_ctx.wireframe.camera.pitch;

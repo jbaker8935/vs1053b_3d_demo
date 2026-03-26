@@ -34,7 +34,7 @@
  */
 
 /* Streaming buffer size.  */
-#define VGM_BUF_SIZE 128u
+#define VGM_BUF_SIZE 255u /* to fit within 8-bit index */
 
 /* Internal flags bits stored in vgm_player_t::flags */
 #define VGM_FLAG_LOOPED          0x01u  /* loop point has been passed once */
