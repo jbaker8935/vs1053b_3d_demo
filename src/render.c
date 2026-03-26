@@ -28,7 +28,7 @@ static bool scene_meta_has_visible_aabb(const SceneObjectMeta *meta) {
 void render_scene_aabb_overlay(uint8_t draw_layer) {
     SceneResult result;
 
-    scene_get_result(&result);
+    vgk_scene_get_result(&result);
     for (uint8_t obj = 0; obj < result.n_objects; ++obj) {
         SceneObjectMeta meta;
         uint16_t min_x;
@@ -36,8 +36,8 @@ void render_scene_aabb_overlay(uint8_t draw_layer) {
         uint8_t min_y;
         uint8_t max_y;
 
-        scene_get_object_meta(obj, &meta);
-        geometry_kernel_yield();
+        vgk_scene_object_meta_get(obj, &meta);
+        vgk_yield();
         if (!scene_meta_has_visible_aabb(&meta)) {
             continue;
         }
@@ -66,7 +66,7 @@ __attribute__((noinline)) void render_frame(GameContext *ctx) {
 
     Camera *camera = &ctx->wireframe.camera;
     if (camera->moved) {
-        setup_camera_params(camera->pitch, camera->yaw, camera->roll,
+        vgk_cam_params_set(camera->pitch, camera->yaw, camera->roll,
                             camera->position.x, camera->position.y,
                             camera->position.z);
         camera->moved = false;

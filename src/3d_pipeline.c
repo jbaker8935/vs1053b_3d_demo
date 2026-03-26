@@ -6,12 +6,12 @@
 // output is written to global line list buffer
 uint8_t transform_instance_to_screen(const Instance3D *instance, const Camera *camera) {
 
-    setup_object_params(
+    vgk_obj_params_set(
         instance->pitch, instance->yaw, instance->roll, instance->scale,
         instance->position.x, instance->position.y, instance->position.z);
 
-    trigger_geometry_kernel();
+    vgk_trigger();
     
-    uint8_t wait_result = geometry_kernel_wait_complete(10000);
+    uint8_t wait_result = vgk_wait_complete(10000);
     return wait_result;
 }

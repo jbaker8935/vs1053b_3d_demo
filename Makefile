@@ -5,6 +5,8 @@ ROOT := $(CURDIR)
 BUILD_DIR := build
 NAME = vs1053b_3d_demo
 
+FOENIX_MGR := "/home/john/code/FoenixMgr/fm.sh"
+
 # Tool locations (use the user's tool locations by default)
 CC := /opt/llvm-mos/bin/mos-f256-clang
 LD := /opt/llvm-mos/bin/ld.lld
@@ -19,7 +21,7 @@ OBJCOPY ?= llvm-objcopy
 PYTHON ?= python3
 
 LDSCRIPT ?= f256.ld
-CFLAGS ?= -I$(ROOT) -I$(ROOT)/src -I$(ROOT)/include -Os -Wall -D__llvm_mos__
+CFLAGS ?= -I$(ROOT) -I$(ROOT)/src -I$(ROOT)/include -I/opt/llvm-mos/include -Os -Wall -D__llvm_mos__
 
 LDFLAGS ?=
 
@@ -143,8 +145,18 @@ pgz: $(BUILD_DIR)/$(NAME).pgz
 dist: pgz
 	@echo "dist produced: bin/$(NAME).pgz"
 
+
+copy: pgz
+	@echo "Transferring $(ROOT)/bin/$(NAME).pgz to Foenix..."
+	@$(FOENIX_MGR) --port /dev/ttyUSB2 --copy $(ROOT)/bin/$(NAME).pgz
+
+dump: 
+	@echo "Reading memory at offset 0x0000"
+	@$(FOENIX_MGR) --port /dev/ttyUSB2 --dump 0
+	
 run: pgz
-	@echo "run target is a no-op by default. Override to flash or emulate."
+	@echo "Running $(NAME) on Foenix..."
+	@$(FOENIX_MGR) --port /dev/ttyUSB2 --run-pgz $(ROOT)/bin/$(NAME).pgz
 
 # Benchmarks
 BENCH_NAME := bench_mul
@@ -164,6 +176,26 @@ $(BUILD_DIR)/$(BENCH_NAME).pgz: $(BUILD_DIR)/$(BENCH_NAME)
 	@# Copy bench artifact to bin/ for easy access
 	@mkdir -p bin
 	@cp $(BUILD_DIR)/$(BENCH_NAME).pgz bin/
+
+# T0 pending-flag reliability test (hardware bug investigation)
+TEST_T0_PEND_NAME := test_t0_pend
+TEST_T0_PEND_OBJ  := $(BUILD_DIR)/$(TEST_T0_PEND_NAME).o
+
+test_t0_pend: $(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz
+	@echo "test_t0_pend build complete: $<"
+
+$(BUILD_DIR)/$(TEST_T0_PEND_NAME).o: tools/$(TEST_T0_PEND_NAME).c | dirs
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(TEST_T0_PEND_NAME): $(BUILD_DIR)/$(TEST_T0_PEND_NAME).o | dirs
+	$(CC) -D__llvm_mos__ -T $(LDSCRIPT) -o $@ $< -I.. -Os -Wall -lm
+
+$(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz: $(BUILD_DIR)/$(TEST_T0_PEND_NAME)
+	@if [ -f $(BUILD_DIR)/$(TEST_T0_PEND_NAME) ]; then \
+		mv $(BUILD_DIR)/$(TEST_T0_PEND_NAME) $(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz; \
+	fi
+	@mkdir -p bin
+	@cp $(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz bin/
 
 # far_mvn stress test
 TEST_FAR_MVN_NAME := test_far_mvn

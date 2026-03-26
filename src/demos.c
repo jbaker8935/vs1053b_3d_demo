@@ -23,17 +23,17 @@ static const SceneObjectParams demo1_init[] = {
 static const Model3D * const demo1_models[] = { &g_model_cube };
 
 static void demo1_wireframe(void) {
-    hidden_line_disable();
-    no_near_far_coloring = true;
+    vgk_hidden_line_disable();
+    vgk_no_near_far_coloring = true;
 }
 
 static void demo1_hidden_line(void) {
-    geometry_kernel_apply_hidden_line(&g_model_cube, 0);
-    hidden_line_enable();
+    vgk_model_hidden_line_init(&g_model_cube, 0);
+    vgk_hidden_line_enable();
 }
 
 static void demo1_nearfar(void) {
-    no_near_far_coloring = false;
+    vgk_no_near_far_coloring = false;
 }
 
 static void demo1_rotate(void) {
@@ -58,13 +58,13 @@ static void demo1_scale(void) {
 
 static void demo1_enter(void) {
     reset_camera();
-    hidden_line_disable();
-    no_near_far_coloring = true;
+    vgk_hidden_line_disable();
+    vgk_no_near_far_coloring = true;
 }
 
 static void demo1_exit(void) {
-    hidden_line_disable();
-    no_near_far_coloring = false;
+    vgk_hidden_line_disable();
+    vgk_no_near_far_coloring = false;
 }
 
 static const DemoEvent demo1_events[] = {
@@ -98,14 +98,14 @@ static Model3D g_cube2, g_cube3, g_cube4;
 
 static void demo2_enter(void) {
     reset_camera();
-    hidden_line_disable();
-    no_near_far_coloring = false;
+    vgk_hidden_line_disable();
+    vgk_no_near_far_coloring = false;
     g_cube2 = g_model_cube; g_cube2.object_color = 0x0505;
     g_cube3 = g_model_cube; g_cube3.object_color = 0x0707;
     g_cube4 = g_model_cube; g_cube4.object_color = 0x0909;
-    load_model_to_plugin(&g_cube2, 2);
-    load_model_to_plugin(&g_cube3, 3);
-    load_model_to_plugin(&g_cube4, 4);
+    vgk_model_slot_init(&g_cube2, 2);
+    vgk_model_slot_init(&g_cube3, 3);
+    vgk_model_slot_init(&g_cube4, 4);
     g_demo_models[0] = &g_model_cube;
     g_demo_models[1] = &g_cube2;
     g_demo_models[2] = &g_cube3;
@@ -166,8 +166,8 @@ static const Model3D * const demo3_models[] = { &g_model_anaconda, &g_model_proj
 
 static void demo3_enter(void) {
     reset_camera();
-    load_model_to_plugin(&g_model_starfield, 5);
-    load_model_to_plugin(&g_model_projectile, 6);
+    vgk_model_slot_init(&g_model_starfield, 5);
+    vgk_model_slot_init(&g_model_projectile, 6);
     // graphics background
 	POKE(0xD00D, 0x00);
     POKE(0xD00E, 0x00);
@@ -176,9 +176,9 @@ static void demo3_enter(void) {
 }
 
 static void demo3_setup(void) {
-    geometry_kernel_apply_hidden_line(&g_model_anaconda, 1);
-    hidden_line_enable();
-    no_near_far_coloring = false;
+    vgk_model_hidden_line_init(&g_model_anaconda, 1);
+    vgk_hidden_line_enable();
+    vgk_no_near_far_coloring = false;
 }
 
 static void demo3_setup_anaconda_2(void) {
@@ -240,9 +240,9 @@ static void demo3_exit(void) {
     POKE(0xD00D, 0x33);
     POKE(0xD00E, 0x33);
     POKE(0xD00F, 0x33);
-    hidden_line_disable();
+    vgk_hidden_line_disable();
     bitmapSetVisible(0, false);
-    no_near_far_coloring = false;
+    vgk_no_near_far_coloring = false;
 }
 
 static const DemoEvent demo3_events[] = {
@@ -290,12 +290,12 @@ static void demo4_enter(void) {
     POKE(0xD00E, 0x00);
     POKE(0xD00F, 0x00);    
     bitmapSetVisible(0, true);
-    hidden_line_enable();
-    no_near_far_coloring = true;
+    vgk_hidden_line_enable();
+    vgk_no_near_far_coloring = true;
     g_d4_anaconda = g_model_anaconda;
     g_d4_color_idx = 0;
-    load_model_to_plugin(&g_d4_anaconda, 1);
-    load_model_to_plugin(&g_model_starfield, 5);
+    vgk_model_slot_init(&g_d4_anaconda, 1);
+    vgk_model_slot_init(&g_model_starfield, 5);
     g_demo_models[0] = &g_d4_anaconda;
     g_demo_models[1] = &g_model_starfield;
     g_demo_models[2] = &g_model_starfield;
@@ -320,9 +320,9 @@ static void demo4_cycle(void) {
 
 static void demo4_exit(void) {
     bitmapSetVisible(0, false);    
-    hidden_line_disable();    
-    load_model_to_plugin(&g_model_anaconda, 1);
-    no_near_far_coloring = false;
+    vgk_hidden_line_disable();    
+    vgk_model_slot_init(&g_model_anaconda, 1);
+    vgk_no_near_far_coloring = false;
     // restore background color
     POKE(0xD00D, 0x33);
     POKE(0xD00E, 0x33);
@@ -369,8 +369,8 @@ static void demo5_enter(void) {
     ctx->wireframe.camera.pitch = 0;
     ctx->wireframe.camera.roll  = 0;
     ctx->wireframe.camera.moved = true;
-    hidden_line_enable();
-    no_near_far_coloring = false;
+    vgk_hidden_line_enable();
+    vgk_no_near_far_coloring = false;
 }
 
 static uint8_t demo5_orbit_angle;

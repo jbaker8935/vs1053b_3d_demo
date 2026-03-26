@@ -168,7 +168,7 @@ bool demo_engine_update(InputState *input) {
 void demo_engine_render(uint8_t draw_layer) {
     const Demo *d = g_demos[g_demo_idx];
     if (d->use_scene_api) {
-        scene_get_screen_edges(g_demo_instance_count, g_demo_instances,
+        vgk_scene_scrn_edges_get(g_demo_instance_count, g_demo_instances,
                                d->near_color, d->far_color, draw_layer);
         if (g_demo_aabb_overlay) {
             render_scene_aabb_overlay(draw_layer);
@@ -176,14 +176,14 @@ void demo_engine_render(uint8_t draw_layer) {
     } else {
         for (uint8_t i = 0; i < g_demo_instance_count; ++i) {
             const SceneObjectParams *inst = &g_demo_instances[i];
-            setup_object_params(inst->pitch, inst->yaw, inst->roll, inst->scale,
+            vgk_obj_params_set(inst->pitch, inst->yaw, inst->roll, inst->scale,
                                 inst->pos_x, inst->pos_y, inst->pos_z);
-            geometry_kernel_load(inst->slot);
-            geometry_kernel_reset();
-            trigger_geometry_kernel();
-            geometry_kernel_wait_complete(10000);
-            get_screen_edges_with_depth((Model3D *)g_demo_models[i], draw_layer);
-            geometry_kernel_yield(); /* service audio after per-object SCI readback */
+            vgk_model_load(inst->slot);
+            vgk_reset();
+            vgk_trigger();
+            vgk_wait_complete(10000);
+            vgk_scrn_edges_with_depth_get((Model3D *)g_demo_models[i], draw_layer);
+            vgk_yield(); /* service audio after per-object SCI readback */
         }
     }
 }

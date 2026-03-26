@@ -7,7 +7,6 @@
 #include "../include/render.h"
 #include "../include/video.h"
 #include "../include/3d_math.h"
-#include "../include/muVS1053b.h"
 #include "../include/geometry_kernel.h"
 #include "../include/timer.h"
 #include "../include/demo.h"
@@ -17,7 +16,7 @@
 
 extern void loadVS1053Plugin(void);
 extern void boostVSClock(void);
-extern void initialize_plugin(void);
+extern void vgk_plugin_init(void);
 
 #define CODEC_HPO_ATTN_LEFT 0x00
 #define CODEC_HPO_ATTN_RIGHT 0x01
@@ -131,8 +130,8 @@ static void vgm_tick(void) {
 }
 
 static void init_models(void) {
-    load_model_to_plugin(&g_model_cube, 0);
-    load_model_to_plugin(&g_model_anaconda, 1);
+    vgk_model_slot_init(&g_model_cube, 0);
+    vgk_model_slot_init(&g_model_anaconda, 1);
 }
 
 int main(int argc, char *argv[]) {
@@ -143,7 +142,7 @@ int main(int argc, char *argv[]) {
     f256Init();
     boostVSClock();
     loadVS1053Plugin();
-    initialize_plugin();
+    vgk_plugin_init();
     vs1053_mute_dac();
     vs1053_disable_dac_interrupt();
     game_state_init(STATE_DEMO);
@@ -151,7 +150,7 @@ int main(int argc, char *argv[]) {
     video_init();
 
     // 4:3 aspect 320x240 with vertical fov 90 degrees
-    setup_projection_params(120, 160, 120, -64);
+    vgk_projection_params_init(120, 160, 120, -64);
 
     init_models();
     init_codec();
@@ -169,7 +168,7 @@ int main(int argc, char *argv[]) {
         }
       }
     }
-    geometry_kernel_set_yield_cb(vgm_tick);  /* service audio during DSP waits */
+    vgk_yield_cb_set(vgm_tick);  /* service audio during DSP waits */
 
     demos_register();
     demo_engine_start(0);

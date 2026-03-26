@@ -18,7 +18,7 @@ void resetScene() {
 }
 
 void loadScene() {
-    scene_set_descriptor(SCENE_COUNT, g_scene_objects);
+    vgk_scene_set_descriptor(SCENE_COUNT, g_scene_objects);
 
 }
 

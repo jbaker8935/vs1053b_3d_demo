@@ -5,11 +5,12 @@
 
 #define T0_PEND     0xD660
 #define T0_MASK     0xD66C
+#define T0_PEND_BIT 0x10u
 
-#define T0_CTR      0xD650 //master control register for timer0, write.b0=ticks b1=reset b2=set to last value of VAL b3=set count up, clear count down
-#define T0_STAT     0xD650 //master control register for timer0, read bit0 set = reached target val
+#define T0_CTR      0xD650 // write: Timer0 control register
+#define T0_STAT     0xD650 // read: bit0 set when compare is reached
 
-#define CTR_INTEN   0x80  //present only for timer1? or timer0 as well?
+#define CTR_INTEN   0x80  // enable Timer0 compare interrupt/pending generation
 #define CTR_ENABLE  0x01
 #define CTR_CLEAR   0x02
 #define CTR_LOAD    0x04
@@ -81,5 +82,23 @@ uint32_t getAlarmTicks(timer_alarm_id_t alarm);
  */
 void timer_set_period(uint32_t ticks);
 void timer_tick_elapsed(uint32_t ticks);
+
+typedef struct {
+	uint32_t seq;
+	const char *action;
+	uint32_t period;
+	bool fixed_rate;
+	uint8_t pend;
+	uint8_t stat;
+	uint8_t ctr;
+	uint8_t cmp_ctr;
+	uint32_t t0_val;
+	uint32_t t0_cmp;
+} timer_debug_event_t;
+
+const char *timer_debug_last_action(void);
+uint32_t timer_debug_last_period(void);
+bool timer_debug_is_fixed_rate(void);
+uint8_t timer_debug_get_history(timer_debug_event_t *out, uint8_t max_events);
 
 #endif // SRC_TIMER_H__

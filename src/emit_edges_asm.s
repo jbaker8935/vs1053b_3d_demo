@@ -11,7 +11,7 @@
 ;   4. Clip vertex coords burst-read → clip_x_lo/hi/y  (slow path only)
 ;   5. Edge count / flags / packed-v0v1 burst-reads → g_edge_buf_flags/packed
 ;   6. Two-pass near/far emit (inline hardware writes, no line list) OR
-;      single-pass emit when no_near_far_coloring is set
+;      single-pass emit when vgk_no_near_far_coloring is set
 ;
 ; SCI hardware ports (F256 VS1053b interface):
 ;   $D700 = VS_SCI_CTRL  (CTRL_Start=0x01, CTRL_RWn=0x02, CTRL_Busy=0x80)
@@ -86,16 +86,16 @@ zp_fifo_outer:  .space 1        ; FIFO wait outer counter (keeps X/Y free for ve
         .extern g_edge_buf_packed       ; uint16_t[36] — lo=v0, hi=v1 per edge
         .extern g_edge_buf_flags        ; uint8_t[36]  — VISIBLE/NEAR/CLIP flags
         .extern g_line_fifo_timeouts    ; uint16_t — FIFO stall counter
-        .extern no_near_far_coloring    ; bool — non-zero → single flat color, fast path eligible
-        .extern g_hidden_line_active    ; bool — non-zero → hidden-line on, suppress fast path
+        .extern vgk_no_near_far_coloring    ; bool — non-zero → single flat color, fast path eligible
+        .extern vgk_hidden_line_active    ; bool — non-zero → hidden-line on, suppress fast path
 
 ; ===========================================================================
-; get_screen_edges_full_asm
+; vgk_scrn_edges_get_asm
 ;
 ; Entry:
 ;   A                   = layer (0 or 1)
 ;   g_emit_n_input      = model->vertex_count
-;   g_emit_edge_count   = edge count (clamped to VS_GEOM_MAX_EDGES)
+;   g_emit_edge_count   = edge count (clamped to VGK_MAX_EDGES)
 ;   g_emit_near_color   = near color byte
 ;   g_emit_far_color    = far color byte  (== near when no_near_far_coloring)
 ;   g_emit_visible_count= 0  (reset by C wrapper)
@@ -109,9 +109,9 @@ zp_fifo_outer:  .space 1        ; FIFO wait outer counter (keeps X/Y free for ve
 ;
 ; Calling convention (llvm-mos f256): single uint8_t arg in A; return in A.
 ; ===========================================================================
-        .globl get_screen_edges_full_asm
+        .globl vgk_scrn_edges_get_asm
 
-get_screen_edges_full_asm:
+vgk_scrn_edges_get_asm:
 
 ; ---------------------------------------------------------------------------
 ; Block 1: Compute layer control byte (layer<<2)|1 and store.
@@ -123,7 +123,7 @@ get_screen_edges_full_asm:
 
 ; ---------------------------------------------------------------------------
 ; Block 2: Inline SCI burst-read of screen vertex coords.
-;   Set WRAMADDR = VS_GEOM_SCREEN_COORDS (0x36C0)
+;   Set WRAMADDR = VGK_SCREEN_COORDS (0x36C0)
 ;   Then loop g_emit_n_input times reading [sx_lo, sx_hi, sy_lo] per vertex.
 ; ---------------------------------------------------------------------------
 
@@ -175,7 +175,7 @@ gsf_sci_sy_wait:
 
 ; ---------------------------------------------------------------------------
 ; Block 3: Read n_clip from DSP WRAM.
-;   VS_GEOM_N_CLIP_VERTS = 0x3770
+;   VGK_N_CLIP_VERTS = 0x3770
 ; ---------------------------------------------------------------------------
         lda     #$07                    ; SCI_WRAMADDR
         sta     $D701
@@ -207,20 +207,20 @@ gsf_nclip_ok:
 
 ; ---------------------------------------------------------------------------
 ; Block 4: Fast path check.
-;   Conditions: no_near_far_coloring != 0, g_hidden_line_active == 0,
+;   Conditions: no_near_far_coloring != 0, vgk_hidden_line_active == 0,
 ;               g_emit_n_clip == 0, n_out == g_emit_edge_count.
 ;   If all pass -> JMP gsf_fast_path.
 ; ---------------------------------------------------------------------------
-        lda     no_near_far_coloring
+        lda     vgk_no_near_far_coloring
         beq     gsf_skip_fast           ; not set -> can't use fast path
 
-        lda     g_hidden_line_active
+        lda     vgk_hidden_line_active
         bne     gsf_skip_fast           ; hidden-line on -> need VISIBLE flags
 
         lda     g_emit_n_clip
         bne     gsf_skip_fast           ; clip verts present -> need clip array
 
-        ; Read VS_GEOM_N_OUTPUT_EDGES (0x3720) and compare with g_emit_edge_count.
+        ; Read VGK_N_OUTPUT_EDGES (0x3720) and compare with g_emit_edge_count.
         lda     #$07
         sta     $D701
         lda     #$20                    ; lo of 0x3720
@@ -251,7 +251,7 @@ gsf_skip_fast:
 
 ; ---------------------------------------------------------------------------
 ; Block 5: Clip vertex coords (if n_clip > 0).
-;   VS_GEOM_CLIP_SCREEN = 0x3700
+;   VGK_CLIP_SCREEN = 0x3700
 ; ---------------------------------------------------------------------------
         lda     g_emit_n_clip
         beq     gsf_no_clip
@@ -305,11 +305,11 @@ gsf_no_clip:
 ; ---------------------------------------------------------------------------
 ; Block 6: Edge data burst-reads.
 ;
-;   6a: Read VS_GEOM_N_OUTPUT_EDGES -> update g_emit_edge_count.
-;       VS_GEOM_N_OUTPUT_EDGES = 0x3720
-;   6b: Burst-read VS_GEOM_OUTPUT_EDGE_FLAGS (0x3721, packed 2 flags/word)
+;   6a: Read VGK_N_OUTPUT_EDGES -> update g_emit_edge_count.
+;       VGK_N_OUTPUT_EDGES = 0x3720
+;   6b: Burst-read VGK_OUTPUT_EDGE_FLAGS (0x3721, packed 2 flags/word)
 ;       -> unpack to g_edge_buf_flags[] (one byte per edge).
-;   6c: Burst-read VS_GEOM_OUTPUT_EDGE_PACKED (0x3733)
+;   6c: Burst-read VGK_OUTPUT_EDGE_PACKED (0x3733)
 ;       -> g_edge_buf_packed[] as raw uint16_t LE pairs.
 ; ---------------------------------------------------------------------------
 
@@ -340,7 +340,7 @@ gsf_nout2_rd_wait:
 
         ; 6b: read output edge flags -> g_edge_buf_flags[]
         ;     Flags are packed 2 per WRAM word: lo byte = even-index edge, hi byte = odd.
-        ;     VS_GEOM_OUTPUT_EDGE_FLAGS = 0x3721
+        ;     VGK_OUTPUT_EDGE_FLAGS = 0x3721
         lda     #$07
         sta     $D701
         lda     #$21                    ; lo of 0x3721
@@ -387,7 +387,7 @@ gsf_sci_flags_wait:
 gsf_flags_done:
 
         ; 6c: burst-read packed v0v1 -> g_edge_buf_packed[]
-        ;     VS_GEOM_OUTPUT_EDGE_PACKED = 0x3733
+        ;     VGK_OUTPUT_EDGE_PACKED = 0x3733
         ;     Each WRAM word: lo byte = v0, hi byte = v1.
         lda     #$07
         sta     $D701
@@ -430,7 +430,7 @@ gsf_packed_done:
 ; ---------------------------------------------------------------------------
 ; Block 7: Branch to near/far two-pass or single-pass.
 ; ---------------------------------------------------------------------------
-        lda     no_near_far_coloring
+        lda     vgk_no_near_far_coloring
         beq     gsf_do_twopass          ; zero -> two-pass near/far
         jmp     gsf_single_pass         ; non-zero -> single-pass flat color
 gsf_do_twopass:
@@ -828,7 +828,7 @@ gsf_twopass_done:
         rts
 
 ; ===========================================================================
-; Block 9: Single-pass emit (no_near_far_coloring set).
+; Block 9: Single-pass emit (vgk_no_near_far_coloring set).
 ;
 ; Identical vertex-resolve + emit logic to the two-pass loops above, but:
 ;   color is always g_emit_near_color (no NEAR flag test)
@@ -1021,7 +1021,7 @@ gsf_single_done:
 
 ; ===========================================================================
 ; Block 10: Fast path
-;   (no_near_far_coloring + no hidden-line + no clip + all edges output)
+;   (vgk_no_near_far_coloring + no hidden-line + no clip + all edges output)
 ;
 ; Reads vertex indices directly from model->edge_a/b via ZP indirect addressing.
 ; g_emit_edge_a and g_emit_edge_b are ZP pointers (set by C wrapper).
