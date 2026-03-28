@@ -12,7 +12,7 @@
  *      storage is available (SD-card file, high RAM, etc.).
  *   2. Call vgm_open(), passing your callbacks and an opaque context pointer.
  *   3. Call vgm_service() from your main loop as fast as possible.
- *   4. Optionally call timer_service() in the same loop for general alarms;
+ *   4. Optionally call timer_t0_service() in the same loop for general alarms;
  *      the shared T0 protocol ensures they coexist safely.
  *   5. vgm_service() returns VGM_DONE when playback is complete.
  *   6. Call vgm_close() to silence the chip and restore fixed-rate T0 mode.
@@ -21,22 +21,21 @@
  *
  * Constraints and design notes:
  *   - Streams from the source; never loads the whole VGM into RAM.
- *   - VGM_BUF_SIZE bytes are refilled via read_fn as needed (~16x fewer
- *     calls than the old 128-byte buffer for the same amount of music data).
+ *   - VGM_BUF_SIZE bytes are refilled via read_fn as needed
  *   - Only OPL2 (0x5A) and OPL3 (0x5E / 0x5F) register-write commands are
  *     acted on.  All other command bytes are skipped per the VGM spec.
  *   - Waiting is done by programming T0 via timer_set_period() (variable-rate
- *     mode); timer_service() remains callable for concurrent general alarms.
- *   - Loop point is honoured once; the stream then plays to end and stops.
- *   - Declare vgm_player_t as a global or static to allow the compiler to
- *     place the hot 8-bit fields (flags, opl_mode) in zero page.  Annotate
- *     with __attribute__((section(".zp"))) if needed.
+ *     mode); timer_t0_service() remains callable for concurrent general alarms.
+ *   - Loop point is honored once; the stream then plays to end and stops.
+ *   - The library manages playback state internally; callers only implement
+ *     the `vgm_read_fn`/`vgm_seek_fn` callbacks and call `vgm_open()`,
+ *     `vgm_service()`, and `vgm_close()`.
  */
 
 /* Streaming buffer size.  */
-#define VGM_BUF_SIZE 255u /* to fit within 8-bit index */
+#define VGM_BUF_SIZE 255u /* to fit within 8-bit index.  MUST be 96 or larger */
 
-/* Internal flags bits stored in vgm_player_t::flags */
+/* Internal flags bits stored in the player's internal flags */
 #define VGM_FLAG_LOOPED          0x01u  /* loop point has been passed once */
 #define VGM_FLAG_TIMER_RUN       0x02u  /* T0 is counting a VGM wait period */
 #define VGM_FLAG_DONE            0x04u  /* playback complete */
@@ -67,41 +66,10 @@ typedef uint16_t (*vgm_read_fn)(void *ctx, uint8_t *buf, uint16_t len);
  */
 typedef void (*vgm_seek_fn)(void *ctx, uint32_t offset);
 
-/*
- * vgm_player_t -- all playback state.
- * Zero-initialise once (e.g. declare static/global) then pass to vgm_open().
- * vgm_open() fills every field, so explicit pre-zeroing is not required.
- *
- * Field ordering: small fields first to maximise zero-page usage under
- * llvm-mos when the struct is placed in the BSS/ZP section.
+/* Playback state is internal to the library; callers do not allocate or
+ * manage a player object.  Implement the `vgm_read_fn`/`vgm_seek_fn`
+ * callbacks and call `vgm_open()`, `vgm_service()`, and `vgm_close()`.
  */
-typedef struct {
-    /* --- hot 8-bit fields (ZP-eligible) --- */
-    uint8_t  flags;            /* VGM_FLAG_* bitmask                      */
-    uint8_t  opl_mode;         /* 2 = OPL2, 3 = OPL3                     */
-
-    /* --- buffer position (16-bit for 2 KiB buffer) --- */
-    uint16_t buf_pos;          /* index of the next unread byte in buf[]  */
-    uint16_t buf_len;          /* number of valid bytes in buf[]          */
-
-    /* --- 32-bit timing / position fields --- */
-    uint32_t wait_carry;         /* leftover ticks when wait > T0_MAX_TICKS */
-    uint32_t catchup_debt_ticks; /* excess overrun carried across multiple waits */
-    uint32_t last_period;        /* dot-clock ticks of the current T0 period */
-    uint32_t samples_elapsed;  /* total VGM samples consumed so far       */
-    uint32_t total_samples;    /* from VGM header (end-of-data sentinel)  */
-    uint32_t loop_offset;      /* absolute stream offset of loop point; 0=none */
-    uint32_t data_start;       /* absolute stream offset of the VGM data block */
-    uint32_t stream_pos;       /* absolute stream offset just past buf[]  */
-
-    /* --- I/O callbacks --- */
-    vgm_read_fn read_fn;       /* sequential read; see vgm_read_fn above  */
-    vgm_seek_fn seek_fn;       /* absolute seek; see vgm_seek_fn above    */
-    void       *io_ctx;        /* forwarded verbatim to both callbacks     */
-
-    /* --- stream buffer --- */
-    uint8_t  buf[VGM_BUF_SIZE];
-} vgm_player_t;
 
 /*
  * vgm_open(p, read_fn, seek_fn, io_ctx)
@@ -114,12 +82,11 @@ typedef struct {
  *
  *   Returns VGM_PLAYING on success, VGM_ERROR on failure.
  */
-vgm_status_t vgm_open(vgm_player_t *p,
-                       vgm_read_fn read_fn, vgm_seek_fn seek_fn,
+vgm_status_t vgm_open(vgm_read_fn read_fn, vgm_seek_fn seek_fn,
                        void *io_ctx);
 
 /*
- * vgm_service(p)
+ * vgm_service()
  *   Advance playback.  Must be called repeatedly from the main loop.
  *
  *   Returns:
@@ -129,16 +96,16 @@ vgm_status_t vgm_open(vgm_player_t *p,
  *     VGM_DONE     -- end of stream; call vgm_close().
  *     VGM_ERROR    -- stream read error; call vgm_close().
  */
-vgm_status_t vgm_service(vgm_player_t *p);
+vgm_status_t vgm_service(void);
 
 /*
- * vgm_close(p)
+ * vgm_close()
  *   Silence all OPL3 channels and restore T0 to fixed-rate (30 Hz) mode
  *   so that general alarms resume normal operation.
  *   Safe to call from any state, including after VGM_ERROR.
  *   Does NOT close or release the underlying stream; the caller must do
  *   that via io_ctx after this function returns.
  */
-void vgm_close(vgm_player_t *p);
+void vgm_close(void);
 
 #endif /* INCLUDE_VGM_H__ */

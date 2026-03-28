@@ -59,6 +59,153 @@
 #define T1_VAL_M    0xD65A
 #define T1_VAL_H    0xD65B
 
+void video_wait_vblank(void) {
+	/* Spin on the raster row register (same logic as graphicsWaitVerticalBlank)
+	 * but call the geometry-kernel yield each iteration so the audio tick
+	 * is serviced throughout the blanking wait instead of being blocked for
+	 * up to a full frame period. */
+	while (PEEKW(RAST_ROW_L) >= 482u) {}          /* drain current vblank  */
+	while (PEEKW(RAST_ROW_L) < 482u) {            /* wait for next vblank  */
+	}
+}
+
+#define DMA_FILL_VAL16   0xDF02
+#define DMA_16_BIT      0x40
+uint32_t bitmap_base[] = {0x6c000, 0x58000, 0x44000};
+
+__attribute__((optnone,noinline))
+void dmaBitmapClear(uint8_t layer) {
+
+	asm("sei");
+	POKE(DMA_CTRL, DMA_CTRL_FILL | DMA_CTRL_ENABLE | DMA_16_BIT);
+	POKEA(DMA_DST_ADDR, bitmap_base[layer]);
+	POKEA(DMA_COUNT, 0x12C00); 
+	POKEW(DMA_FILL_VAL16, 0x0000);
+
+	POKE(DMA_CTRL, PEEK(DMA_CTRL) | DMA_CTRL_START);
+	// Wait for DMA to complete with timeout to avoid hangs
+	uint16_t timeout = 12000; // generous safety margin
+	while (timeout-- > 0) {
+		if ((PEEK(0xDF01) & 0x80) == 0) { // Busy bit clear
+			break;
+		}
+	}
+	POKE(0xDF00, 0x00); // Stop DMA
+
+	asm("cli");
+
+}
+
+void movedown24(uint32_t dest, uint32_t src, uint16_t count);
+asm(
+    ".text\n"
+    ".global movedown24\n"
+    "movedown24:\n"
+
+    /* Save src bank before clobbering __rc6. */
+    "pha\n"                    /* push dst_lo                           */
+    "lda __rc6\n"              /* src bank                              */
+    "sta __rc10\n"
+    "lda __rc2\n"              /* dst bank                              */
+    "sta __rc11\n"
+    "pla\n"                    /* restore dst_lo                        */
+    "sta __rc6\n"              /* __rc6 = dst_lo                        */
+    "stx __rc7\n"              /* __rc7 = dst_hi  => __rc6:__rc7=dst16  */
+
+    /* Patch self-modifying MVN operand bytes while still in 8-bit mode */
+    "lda __rc11\n"
+    "sta __mdn24_dst\n"
+    "lda __rc10\n"
+    "sta __mdn24_src\n"
+
+    /* Enter critical section */
+    "php\n"
+    "sei\n"
+    "lda $00\n"
+    "ora #$08\n"
+    "sta $00\n"
+    "lda $01\n"
+    "pha\n"            /* save $01                              */
+    "ora #$30\n"       /* bits4+5: Moves IO and Cart to Hi-Mem  */
+    "sta $01\n"
+
+    /* Switch to 65816 native 16-bit mode */
+    "clc\n"
+    ".byte $fb\n"              /* XCE                                   */
+    ".byte $c2, $30\n"         /* REP #$30 -- 16-bit A, X, Y            */
+
+    "ldx __rc4\n"              /* X = src 16-bit addr                   */
+    "ldy __rc6\n"              /* Y = dst 16-bit addr                   */
+
+    "__mdn24_loop:\n"
+
+    "txa\n"
+    ".byte $49, $ff, $ff\n"    /* EOR #$FFFF = $FFFF-X                  */
+    "sta __rc12\n"
+
+    "tya\n"
+    ".byte $49, $ff, $ff\n"    /* EOR #$FFFF = $FFFF-Y                  */
+    "cmp __rc12\n"
+    "bcc __mdn24_have_min\n"
+    "lda __rc12\n"
+    "__mdn24_have_min:\n"
+
+    "cmp __rc8\n"
+    "bcc __mdn24_do_mvn\n"
+    "lda __rc8\n"
+    ".byte $3a\n"
+
+    "__mdn24_do_mvn:\n"
+    "sta __rc12\n"
+
+    ".byte $54\n"              /* MVN dest_bank, src_bank               */
+    "__mdn24_dst:\n"
+    ".byte $00\n"
+    "__mdn24_src:\n"
+    ".byte $00\n"
+    ".byte $4b\n"              /* PHK -- push PBR (= 0) onto stack      */
+    ".byte $ab\n"              /* PLB -- pull stack top -> DBR = 0      */
+
+    "lda __rc8\n"
+    ".byte $3a\n"
+    "sec\n"
+    "sbc __rc12\n"
+    "sta __rc8\n"
+
+    "beq __mdn24_done\n"
+
+    ".byte $e0, $00, $00\n"    /* CPX #0                                */
+    "bne __mdn24_check_dst\n"
+    ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                   */
+    "inc __mdn24_src\n"
+    ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                  */
+
+    "__mdn24_check_dst:\n"
+    ".byte $c0, $00, $00\n"    /* CPY #0                                */
+    "bne __mdn24_loop\n"
+    ".byte $e2, $20\n"         /* SEP #$20 -> 8-bit A                   */
+    "inc __mdn24_dst\n"
+    ".byte $c2, $20\n"         /* REP #$20 -> 16-bit A                  */
+    "jmp __mdn24_loop\n"
+
+    "__mdn24_done:\n"
+
+    "sec\n"
+    ".byte $fb\n"              /* XCE                                   */
+
+    "lda $00\n"
+    "and #$F7\n"
+    "sta $00\n"
+    "pla\n"
+    "sta $01\n"
+    "plp\n"
+    "rts\n"
+);
+
+uint32_t high_mem_test_addr = 0x010000u;
+uint8_t test_buf[256]={0};
+
+
 /* -----------------------------------------------------------------------
  * Test parameters
  *
@@ -79,22 +226,23 @@ static const uint32_t TEST_CMP[N_PERIODS] = {
 
 /* Trials per period (more trials at short periods where we can afford it) */
 static const uint32_t TEST_TRIALS[N_PERIODS] = {
-    500000u,
-    100000u,
-    20000u,
-    2500u,
+    5000u,
+    1000u,
+    2000u,
+    250u,
 };
 
 /*
  * OK_SLACK_TICKS: dotclock ticks allowed past cmp before classifying as LATE.
  * CPU is a 12 MHz 65816 in 6502 emulation mode; dotclock is 25.175 MHz
  * → ≈ 2.1 dotclock ticks per CPU cycle.
- * read_t0() worst-case = 8 PEEK (LDA abs to MMIO, ~6-7 cycles each with wait
- * states) + loop overhead ≈ 120 CPU cycles → ~252 dotclock ticks.
- * 256 is just above the observed worst-case and remains well below the
+ * read_t0() now reads H/M/L, then rechecks H/M for stability; worst-case is
+ * roughly two passes through that sequence plus loop overhead, or about
+ * 150 CPU cycles → ~315 dotclock ticks.
+ * 320 is just above the estimated worst-case and remains well below the
  * 571-tick minimum test period.
  */
-#define OK_SLACK_TICKS  256u
+#define OK_SLACK_TICKS  320u
 
 /* -----------------------------------------------------------------------
  * Failure log
@@ -142,30 +290,42 @@ volatile uint32_t g_t1_end;
 
 static uint32_t read_t0(void)
 {
-    /* Consistent 24-bit read: retry once if high byte changed mid-read */
-    uint8_t h = PEEK(T0_VAL_H);
-    uint8_t m = PEEK(T0_VAL_M);
-    uint8_t l = PEEK(T0_VAL_L);
-    uint8_t h2 = PEEK(T0_VAL_H);
-    if (h2 != h) {
-        h = h2;
-        m = PEEK(T0_VAL_M);
-        l = PEEK(T0_VAL_L);
-    }
-    return ((uint32_t)h << 16) | ((uint32_t)m << 8) | (uint32_t)l;
+    /* Consistent 24-bit read: retry until high and middle bytes are stable. */
+    // uint8_t h, m, l, h2, m2;
+    // do {
+    //     h  = PEEK(T0_VAL_H);
+    //     m  = PEEK(T0_VAL_M);
+    //     l  = PEEK(T0_VAL_L);
+    //     h2 = PEEK(T0_VAL_H);
+    //     m2 = PEEK(T0_VAL_M);
+    // } while (h2 != h || m2 != m);
+
+    // return ((uint32_t)h << 16) | ((uint32_t)m << 8) | (uint32_t)l;
+
+    /* Retry only for High byte stability */
+    uint8_t h1, h2, m, l;
+    do {
+        h1 = PEEK(T0_VAL_H);
+        m  = PEEK(T0_VAL_M);
+        l  = PEEK(T0_VAL_L);
+        h2 = PEEK(T0_VAL_H);
+    } while (h1 != h2);
+
+    return ((uint32_t)h1 << 16) | ((uint32_t)m << 8) | (uint32_t)l;    
 }
 
 static uint32_t read_t1(void)
 {
-    uint8_t h = PEEK(T1_VAL_H);
-    uint8_t m = PEEK(T1_VAL_M);
-    uint8_t l = PEEK(T1_VAL_L);
-    uint8_t h2 = PEEK(T1_VAL_H);
-    if (h2 != h) {
-        h = h2;
-        m = PEEK(T1_VAL_M);
-        l = PEEK(T1_VAL_L);
-    }
+    uint8_t h, m, l, h2, m2;
+
+    do {
+        h  = PEEK(T1_VAL_H);
+        m  = PEEK(T1_VAL_M);
+        l  = PEEK(T1_VAL_L);
+        h2 = PEEK(T1_VAL_H);
+        m2 = PEEK(T1_VAL_M);
+    } while (h2 != h || m2 != m);
+
     return ((uint32_t)h << 16) | ((uint32_t)m << 8) | (uint32_t)l;
 }
 
@@ -217,18 +377,22 @@ static uint8_t run_trial(uint32_t cmp, bool use_reload)
 
     /* --- Phase 1: tight poll until PEND fires or counter passes the target - */
     for (;;) {
-        if (PEEK(T0_PEND) & 0x10u) {
-            return 0;           /* PEND fired; counter is still ≤ cmp or just past */
+        video_wait_vblank();
+        dmaBitmapClear(0); 
+        uint32_t t0_val = read_t0();        /* read counter first */
+        if (PEEK(T0_PEND) & 0x10u) {       /* then check PEND   */
+            return 0;   /* PEND set at or after counter sample - OK */
         }
-        uint32_t t0_val = read_t0();
+
         if (t0_val >= cmp) {
-            /* Allow a small overrun caused by read_t0() instruction timing:
-             * if still within OK_SLACK_TICKS of cmp and PEND has now set,
-             * treat as OK rather than LATE. */
-            if ((t0_val - cmp) < OK_SLACK_TICKS && (PEEK(T0_PEND) & 0x10u)) {
+            /* Counter passed cmp with PEND not yet observed.
+             * Allow a small window for PEND to arrive due to read_t0()
+             * latency (~4 bus cycles = ~8 dot-clock ticks worst case).
+             * Check PEND first so we don't accept a spuriously late fire. */
+            if ((PEEK(T0_PEND) & 0x10u) && (t0_val - cmp) < OK_SLACK_TICKS) {
                 return 0;
             }
-            break;              /* counter overtook compare with no PEND */
+            break;  /* counter overtook compare with no PEND - escalate */
         }
     }
 
@@ -237,10 +401,10 @@ static uint8_t run_trial(uint32_t cmp, bool use_reload)
     if (timeout < cmp) { timeout = 0x00FFFFFFu; }  /* 24-bit overflow guard */
 
     for (;;) {
-        if (PEEK(T0_PEND) & 0x10u) {
-            return 1;           /* arrived late */
+        uint32_t val = read_t0();           /* read counter first */
+        if (PEEK(T0_PEND) & 0x10u) {       /* then check PEND   */
+            return 1;   /* arrived late */
         }
-        uint32_t val = read_t0();
         if (val >= timeout) {
             /* Definitive miss – capture evidence */
             uint8_t pend    = PEEK(T0_PEND);

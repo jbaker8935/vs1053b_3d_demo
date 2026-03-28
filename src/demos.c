@@ -205,8 +205,8 @@ static void demo3_fly(void) {
     g_demo_instances[1].pos_y = (int16_t)(g_demo_instances[1].pos_y + 2);
     g_demo_instances[1].roll  = (uint8_t)(g_demo_instances[1].roll + 4);
 
+    // move the starfield with the camera.
     GameContext *ctx = game_state_data();
-    
     g_demo_instances[2].pos_x = ctx->wireframe.camera.position.x;
     g_demo_instances[2].pos_y = ctx->wireframe.camera.position.y;
     g_demo_instances[2].pos_z = ctx->wireframe.camera.position.z;
@@ -225,8 +225,8 @@ static void demo3_ohno_fly(void) {
     g_demo_instances[1].pos_y = (int16_t)(g_demo_instances[1].pos_x + 2);
     g_demo_instances[1].roll  = (uint8_t)(g_demo_instances[1].roll + 4);
 
+    // move the starfield with the camera.
     GameContext *ctx = game_state_data();
-    
     g_demo_instances[2].pos_x = ctx->wireframe.camera.position.x;
     g_demo_instances[2].pos_y = ctx->wireframe.camera.position.y;
     g_demo_instances[2].pos_z = ctx->wireframe.camera.position.z;
@@ -386,8 +386,8 @@ static void demo5_orbit(void) {
     int16_t cosv = sin_table[(uint8_t)(demo5_orbit_angle + 64u)];
 
     // Q14 multiply: (sinv * radius) >> 14
-    int16_t dx = (int16_t)(((int32_t)cosv * radius) >> 14);
-    int16_t dz = (int16_t)(((int32_t)sinv * radius) >> 14);
+    int16_t dx = (int16_t)((mathSignedMultiply(cosv,radius)) >> 14);
+    int16_t dz = (int16_t)((mathSignedMultiply(sinv,radius)) >> 14);
 
     GameContext *ctx = game_state_data();
     ctx->wireframe.camera.position.x = (int16_t)(center_x + dx);

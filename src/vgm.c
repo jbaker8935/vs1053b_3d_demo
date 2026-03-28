@@ -1,8 +1,6 @@
 /*
  * vgm.c -- lightweight VGM streaming player for F256 / YMF262 (OPL3)
  *
- * Derived from first principles against the VGM specification:
- *   https://vgmrips.net/wiki/VGM_Specification
  *
  * Hardware register map from:
  *   https://f256wiki.wildbitscomputing.com/index.php?title=Use_the_OPL3_YMF262
@@ -61,263 +59,9 @@ static uint8_t vgm_buf[VGM_BUF_SIZE];
  * calling the soft __mulsi3 routine at run time. */
 #define TICKS_ONE_NTSC  ((uint32_t)735u * VGM_TICKS_PER_SAMPLE)  /* 0x066525 */
 #define TICKS_ONE_PAL   ((uint32_t)882u * VGM_TICKS_PER_SAMPLE)  /* 0x07AEC6 */
-/* 44100 / 100 Hz = 441 samples.  Furnace exports 100 Hz sequences using the
- * variable-wait 0x61 command with this fixed value every tick.  Avoid the
- * hardware MULU call by detecting the common case at compile time. */
+/* Special Case 0x61 variable timing values.  Used to avoid a multiply  */
 #define TICKS_100HZ     ((uint32_t)441u * VGM_TICKS_PER_SAMPLE)  /* 0x3D5EB */
-/* 44100 / 200 Hz = 220.5 → rounded to 220 samples.  vgm_quantize.py emits
- * 200 Hz sequences (default) that use 220-sample waits; avoid MULU here too. */
 #define TICKS_200HZ     ((uint32_t)220u * VGM_TICKS_PER_SAMPLE)  /* 0x1EAF4 */
-
-/* -----------------------------------------------------------------------
- * Rare-stall instrumentation
- * ----------------------------------------------------------------------- */
-#define VGM_DIAGNOSTIC_TRACE 0
-#define VGM_DEBUG_LATE_WAIT_TICKS    ((uint32_t)(VIDEO_DOT_CLOCK_HZ / 4u))
-
-static uint32_t vgm_wait_armed_period;
-static uint8_t  vgm_last_cmd;
-static uint8_t  vgm_debug_reported;
-
-typedef struct {
-    uint8_t pend;
-    uint8_t stat;
-    uint8_t ctr;
-    uint8_t cmp_ctr;
-    uint32_t t0_val;
-    uint32_t t0_cmp;
-} vgm_timer_snapshot_t;
-
-static vgm_timer_snapshot_t vgm_wait_snap_pre;
-static vgm_timer_snapshot_t vgm_wait_snap_post;
-static vgm_timer_snapshot_t vgm_wait_snap_hit;
-static vgm_timer_snapshot_t vgm_wait_snap_arm;
-static uint8_t vgm_wait_snap_pre_valid;
-static uint8_t vgm_wait_snap_post_valid;
-static uint8_t vgm_wait_snap_hit_valid;
-static uint8_t vgm_wait_snap_arm_valid;
-
-static char *dbg_append_str(char *dst, const char *end, const char *src)
-{
-    while (dst < end && *src != '\0') {
-        *dst++ = *src++;
-    }
-    return dst;
-}
-
-static char *dbg_append_u32(char *dst, const char *end, uint32_t value)
-{
-    char tmp[10];
-    uint8_t len = 0u;
-
-    do {
-        tmp[len++] = (char)('0' + (value % 10u));
-        value /= 10u;
-    } while (value != 0u);
-
-    while (dst < end && len > 0u) {
-        *dst++ = tmp[--len];
-    }
-    return dst;
-}
-
-static char *dbg_append_u8_hex(char *dst, const char *end, uint8_t value)
-{
-    static const char hex[] = "0123456789ABCDEF";
-    if ((end - dst) < 2) {
-        return dst;
-    }
-    *dst++ = hex[(value >> 4u) & 0x0Fu];
-    *dst++ = hex[value & 0x0Fu];
-    return dst;
-}
-
-static char *dbg_append_u32_hex(char *dst, const char *end, uint32_t value)
-{
-    static const char hex[] = "0123456789ABCDEF";
-    if ((end - dst) < 8) {
-        return dst;
-    }
-    *dst++ = hex[(value >> 28u) & 0x0Fu];
-    *dst++ = hex[(value >> 24u) & 0x0Fu];
-    *dst++ = hex[(value >> 20u) & 0x0Fu];
-    *dst++ = hex[(value >> 16u) & 0x0Fu];
-    *dst++ = hex[(value >> 12u) & 0x0Fu];
-    *dst++ = hex[(value >> 8u) & 0x0Fu];
-    *dst++ = hex[(value >> 4u) & 0x0Fu];
-    *dst++ = hex[value & 0x0Fu];
-    return dst;
-}
-
-static const char *dbg_timer_action_code(const char *action)
-{
-    if (action == NULL) {
-        return "?";
-    }
-    if (action[0] == 't' && action[1] == 'i' && action[2] == 'm' && action[3] == 'e'
-            && action[4] == 'r' && action[5] == '_' && action[6] == 's' && action[7] == 'e'
-            && action[8] == 't' && action[9] == '_' && action[10] == 'p' && action[11] == 'e'
-            && action[12] == 'r' && action[13] == 'i' && action[14] == 'o' && action[15] == 'd'
-            && action[16] == '_' && action[17] == 'c' && action[18] == 'm' && action[19] == 'p'
-            && action[20] == '_') {
-        return "L";
-    }
-    if (action[0] == 't' && action[1] == 'i' && action[2] == 'm' && action[3] == 'e'
-            && action[4] == 'r' && action[5] == '_' && action[6] == 's' && action[7] == 'e'
-            && action[8] == 't' && action[9] == '_' && action[10] == 'p' && action[11] == 'e'
-            && action[12] == 'r' && action[13] == 'i' && action[14] == 'o' && action[15] == 'd'
-            && action[16] == '_' && action[17] == 'a' && action[18] == 'r' && action[19] == 'm') {
-        return "A";
-    }
-    if (action[0] == 't' && action[1] == 'i' && action[2] == 'm' && action[3] == 'e'
-            && action[4] == 'r' && action[5] == '_' && action[6] == 't' && action[7] == 'i'
-            && action[8] == 'c' && action[9] == 'k' && action[10] == '_' && action[11] == 'e'
-            && action[12] == 'l' && action[13] == 'a' && action[14] == 'p' && action[15] == 's'
-            && action[16] == 'e' && action[17] == 'd' && action[18] == '_' && action[19] == 'c') {
-        return "C";
-    }
-    if (action[0] == 't' && action[1] == 'i' && action[2] == 'm' && action[3] == 'e'
-            && action[4] == 'r' && action[5] == '_' && action[6] == 's' && action[7] == 'e') {
-        return "P";
-    }
-    if (action[0] == 't' && action[1] == 'i' && action[2] == 'm' && action[3] == 'e'
-            && action[4] == 'r' && action[5] == '_' && action[6] == 't' && action[7] == 'i') {
-        return "E";
-    }
-    if (action[0] == 's' && action[1] == 'e') {
-        return "S";
-    }
-    if (action[0] == 'r' && action[1] == 'e') {
-        return "R";
-    }
-    return action;
-}
-
-static char *dbg_append_timer_history(char *dst, const char *end)
-{
-    timer_debug_event_t events[4];
-    uint8_t count = timer_debug_get_history(events, 4u);
-
-    if (count == 0u) {
-        return dbg_append_str(dst, end, " hist=none");
-    }
-
-    dst = dbg_append_str(dst, end, " hist=");
-    while (count > 0u) {
-        const timer_debug_event_t *event = &events[(uint8_t)(count - 1u)];
-        dst = dbg_append_str(dst, end, dbg_timer_action_code(event->action));
-        dst = dbg_append_str(dst, end, "/");
-        dst = dbg_append_u32(dst, end, event->period);
-        --count;
-        if (count > 0u) {
-            dst = dbg_append_str(dst, end, "|");
-        }
-    }
-    return dst;
-}
-
-static void dbg_capture_wait_snapshot(vgm_timer_snapshot_t *snapshot)
-{
-    snapshot->pend = (uint8_t)(PEEK(T0_PEND) & 0xFFu);
-    snapshot->stat = (uint8_t)(PEEK(T0_STAT) & 0xFFu);
-    snapshot->ctr = (uint8_t)(PEEK(T0_CTR) & 0xFFu);
-    snapshot->cmp_ctr = (uint8_t)(PEEK(T0_CMP_CTR) & 0xFFu);
-    snapshot->t0_val = readTimer0_consistent();
-    snapshot->t0_cmp = (uint32_t)PEEK(T0_CMP_L)
-                      | ((uint32_t)PEEK(T0_CMP_M) << 8u)
-                      | ((uint32_t)PEEK(T0_CMP_H) << 16u);
-}
-
-static char *dbg_append_wait_snapshot(char *dst, const char *end,
-                                      const char *label,
-                                      const vgm_timer_snapshot_t *snapshot)
-{
-    dst = dbg_append_str(dst, end, " ");
-    dst = dbg_append_str(dst, end, label);
-    dst = dbg_append_str(dst, end, "[p=0x");
-    dst = dbg_append_u8_hex(dst, end, snapshot->pend);
-    dst = dbg_append_str(dst, end, " s=0x");
-    dst = dbg_append_u8_hex(dst, end, snapshot->stat);
-    dst = dbg_append_str(dst, end, " c=0x");
-    dst = dbg_append_u8_hex(dst, end, snapshot->ctr);
-    dst = dbg_append_str(dst, end, " m=0x");
-    dst = dbg_append_u8_hex(dst, end, snapshot->cmp_ctr);
-    dst = dbg_append_str(dst, end, " v=");
-    dst = dbg_append_u32(dst, end, snapshot->t0_val);
-    dst = dbg_append_str(dst, end, " x=");
-    dst = dbg_append_u32(dst, end, snapshot->t0_cmp);
-    dst = dbg_append_str(dst, end, "]");
-    return dst;
-}
-
-static void dbg_report(const char *tag,
-                       uint32_t a, uint32_t b, uint32_t c)
-{
-#if VGM_DIAGNOSTIC_TRACE
-    static char line[256];
-    const char *end = line + sizeof(line) - 1u;
-    char *p = line;
-    const char *timer_action = timer_debug_last_action();
-    uint32_t timer_action_period = timer_debug_last_period();
-    bool timer_fixed_rate = timer_debug_is_fixed_rate();
-
-    if (vgm_debug_reported) {
-        return;
-    }
-    vgm_debug_reported = 1u;
-
-    p = dbg_append_str(p, end, "[VGM] ");
-    p = dbg_append_str(p, end, tag);
-    p = dbg_append_str(p, end, " cmd=0x");
-    p = dbg_append_u8_hex(p, end, vgm_last_cmd);
-    p = dbg_append_str(p, end, " flags=0x");
-    p = dbg_append_u8_hex(p, end, vgm_flags);
-    p = dbg_append_str(p, end, " p=0x");
-    p = dbg_append_u8_hex(p, end, PEEK(T0_PEND));
-    p = dbg_append_str(p, end, " c=0x");
-    p = dbg_append_u8_hex(p, end, PEEK(T0_CTR));
-    p = dbg_append_str(p, end, " m=0x");
-    p = dbg_append_u8_hex(p, end, PEEK(T0_CMP_CTR));
-    p = dbg_append_str(p, end, " t=");
-    p = dbg_append_str(p, end, timer_fixed_rate ? "F" : "V");
-    p = dbg_append_str(p, end, " l=");
-    p = dbg_append_str(p, end, dbg_timer_action_code(timer_action));
-    p = dbg_append_str(p, end, "/");
-    p = dbg_append_u32(p, end, timer_action_period);
-    p = dbg_append_str(p, end, " a=");
-    p = dbg_append_u32(p, end, vgm_wait_armed_period);
-    p = dbg_append_str(p, end, " ph=");
-    if (vgm_flags & VGM_FLAG_TIMER_RUN) {
-        p = dbg_append_str(p, end, (vgm_flags & VGM_FLAG_COMPENSATE) ? "e" : "a");
-    } else if (vgm_flags & VGM_FLAG_COMPENSATE) {
-        p = dbg_append_str(p, end, "r");
-    } else {
-        p = dbg_append_str(p, end, "d");
-    }
-    p = dbg_append_str(p, end, " n=");
-    p = dbg_append_u32(p, end, a);
-    p = dbg_append_str(p, end, " w=");
-    p = dbg_append_u32(p, end, b);
-    p = dbg_append_str(p, end, " lw=");
-    p = dbg_append_u32(p, end, c);
-    p = dbg_append_timer_history(p, end);
-    if (vgm_wait_snap_pre_valid) {
-        p = dbg_append_wait_snapshot(p, end, " pre", &vgm_wait_snap_pre);
-    }
-    if (vgm_wait_snap_hit_valid) {
-        p = dbg_append_wait_snapshot(p, end, " hit", &vgm_wait_snap_hit);
-    }
-    *p++ = '\n';
-    *p = '\0';
-    textPrint(line);
-    getchar();
-#else
-    (void)tag;
-    (void)a;
-    (void)b;
-    (void)c;
-#endif
-}
 
 /* -----------------------------------------------------------------------
  * OPL3 helpers
@@ -345,8 +89,8 @@ static void opl_write_port1(uint8_t reg, uint8_t val)
  * duration well under the full 24-bit period. */
 static void spin_wait(uint32_t ticks)
 {
-    uint32_t start = readTimer0_consistent();
-    while (((readTimer0_consistent() - start) & T0_MASK_TICKS) < ticks) {
+    uint32_t start = timer_t0_read_consistent();
+    while (((timer_t0_read_consistent() - start) & T0_MASK_TICKS) < ticks) {
         /* busy wait */
     }
 }
@@ -402,34 +146,30 @@ static void opl_init(uint8_t mode)
 
 /* Refill the stream buffer using the client read callback.  Resets buf_pos
  * and advances stream_pos past the newly-loaded bytes. */
-static void buf_refill(vgm_player_t *p)
+static void buf_refill(void)
 {
-    (void)p;
     uint16_t n = vgm_read_fn_ptr(vgm_io_ctx, vgm_buf, VGM_BUF_SIZE);
     vgm_buf_len = n;
     vgm_buf_pos = 0u;
     vgm_stream_pos += (uint32_t)n;
 }
 
-static __attribute__((noinline)) uint8_t buf_refill_and_get(vgm_player_t *p)
+static __attribute__((noinline)) uint8_t buf_refill_and_get(void)
 {
-    (void)p;
-    buf_refill(p);
+    buf_refill();
     return vgm_buf[vgm_buf_pos++];
 }
 
-static __attribute__((always_inline)) uint8_t buf_get(vgm_player_t *p)
+static __attribute__((always_inline)) uint8_t buf_get(void)
 {
-    (void)p;
     if (__builtin_expect(vgm_buf_pos < vgm_buf_len, 1)) {
         return vgm_buf[vgm_buf_pos++];
     }
-    return buf_refill_and_get(p);
+    return buf_refill_and_get();
 }
 
-static void buf_skip(vgm_player_t *p, uint8_t n)
+static void buf_skip(uint8_t n)
 {
-    (void)p;
     uint8_t avail = vgm_buf_len - vgm_buf_pos;
     if (n <= avail) {
         vgm_buf_pos += n;
@@ -439,35 +179,32 @@ static void buf_skip(vgm_player_t *p, uint8_t n)
         vgm_stream_pos = cur + (uint32_t)n;
         vgm_buf_len = 0u;
         vgm_buf_pos = 0u;
-        buf_refill(p);
+        buf_refill();
     }
 }
 
-static void buf_seek(vgm_player_t *p, uint32_t offset)
+static void buf_seek(uint32_t offset)
 {
-    (void)p;
     vgm_seek_fn_ptr(vgm_io_ctx, offset);
     vgm_stream_pos = offset;
     vgm_buf_len = 0u;
     vgm_buf_pos = 0u;
-    buf_refill(p);
+    buf_refill();
 }
 
-static uint16_t buf_get_le16(vgm_player_t *p)
+static uint16_t buf_get_le16(void)
 {
-    (void)p;
-    uint8_t lo = buf_get(p);
-    uint8_t hi = buf_get(p);
+    uint8_t lo = buf_get();
+    uint8_t hi = buf_get();
     return (uint16_t)lo | ((uint16_t)hi << 8u);
 }
 
-static uint32_t buf_get_le32(vgm_player_t *p)
+static uint32_t buf_get_le32(void)
 {
-    (void)p;
-    uint32_t v  = (uint32_t)buf_get(p);
-    v |= (uint32_t)buf_get(p) << 8u;
-    v |= (uint32_t)buf_get(p) << 16u;
-    v |= (uint32_t)buf_get(p) << 24u;
+    uint32_t v  = (uint32_t)buf_get();
+    v |= (uint32_t)buf_get() << 8u;
+    v |= (uint32_t)buf_get() << 16u;
+    v |= (uint32_t)buf_get() << 24u;
     return v;
 }
 
@@ -549,15 +286,7 @@ static __attribute__((always_inline)) bool schedule_wait_arm(uint32_t ticks)
         vgm_wait_carry = 0u;
     }
     vgm_last_period = ticks;
-    vgm_wait_armed_period = ticks;
-    vgm_wait_snap_post_valid = 0u;
-    vgm_wait_snap_hit_valid = 0u;
-    vgm_wait_snap_arm_valid = 0u;
-    timer_set_period(ticks);
-#if VGM_DIAGNOSTIC_TRACE
-    dbg_capture_wait_snapshot(&vgm_wait_snap_arm);
-    vgm_wait_snap_arm_valid = 1u;
-#endif
+    timer_period_set(ticks);
     vgm_flags |= VGM_FLAG_TIMER_RUN;
     return true;
 }
@@ -587,12 +316,11 @@ static __attribute__((always_inline)) bool schedule_wait_arm(uint32_t ticks)
  * delay effects -- such as the R-channel note triggering 1-2 ticks (10-20 ms)
  * before the L-channel note in furnace_bgm.vgm -- from collapsing below
  * audible thresholds during catch-up. */
-static bool schedule_wait_catchup(vgm_player_t *p, uint32_t ticks)
+static bool schedule_wait_catchup(uint32_t ticks)
 {
     /* Stage 1: measure dispatch overrun after a real T0 fire. */
-    (void)p;
     if (vgm_flags & VGM_FLAG_COMPENSATE) {
-        uint32_t now = readTimer0_consistent();
+        uint32_t now = timer_t0_read_consistent();
         uint32_t overrun = (now > vgm_last_period) ? (now - vgm_last_period) : 0u;
         bool was_catching_up = (vgm_catchup_debt_ticks > 0u);
         if (overrun >= ticks) {
@@ -619,19 +347,6 @@ static bool schedule_wait_catchup(vgm_player_t *p, uint32_t ticks)
     if (vgm_catchup_debt_ticks > 0u) {
         if (vgm_catchup_debt_ticks >= ticks) {
             vgm_catchup_debt_ticks -= ticks;
-#if VGM_CATCHUP_COMPRESSION
-            if (ticks <= VGM_MIN_MICRO_WAIT_TICKS) {
-                /* During active catch-up, avoid extra busy-waiting.  Drain
-                 * debt faster by compressing micro waits rather than spinning. */
-                ticks = (ticks / (uint32_t)VGM_CATCHUP_DIVISOR > (uint32_t)VGM_CATCHUP_TICKS)
-                      ? ticks / (uint32_t)VGM_CATCHUP_DIVISOR : (uint32_t)VGM_CATCHUP_TICKS;
-            } else {
-                /* Proportional floor: compress to ticks/DIVISOR so stereo delay
-                 * effects remain audible even during catch-up. */
-                ticks = (ticks / (uint32_t)VGM_CATCHUP_DIVISOR > (uint32_t)VGM_CATCHUP_TICKS)
-                      ? ticks / (uint32_t)VGM_CATCHUP_DIVISOR : (uint32_t)VGM_CATCHUP_TICKS;
-            }
-#endif
         } else {
             ticks -= vgm_catchup_debt_ticks;
             vgm_catchup_debt_ticks = 0u;
@@ -647,13 +362,13 @@ static bool schedule_wait_catchup(vgm_player_t *p, uint32_t ticks)
  * Returns false if the wait was serviced inline via spin_wait() (micro-wait
  * preserved for stereo separation) -- caller should continue dispatching.
  */
-static bool schedule_wait(vgm_player_t *p, uint32_t ticks)
+static bool schedule_wait(uint32_t ticks)
 {
     if (__builtin_expect((vgm_flags & VGM_FLAG_COMPENSATE) == 0u &&
                          vgm_catchup_debt_ticks == 0u, 1)) {
         return schedule_wait_arm(ticks);
     }
-    return schedule_wait_catchup(p, ticks);
+    return schedule_wait_catchup(ticks);
 }
 
 /* -----------------------------------------------------------------------
@@ -685,16 +400,13 @@ static inline bool vgm_end_of_stream(void)
  * Public API
  * ----------------------------------------------------------------------- */
 
-vgm_status_t vgm_open(vgm_player_t *p,
-                       vgm_read_fn read_fn, vgm_seek_fn seek_fn,
+vgm_status_t vgm_open(vgm_read_fn read_fn, vgm_seek_fn seek_fn,
                        void *io_ctx)
 {
     uint16_t n;
     uint16_t version;
     uint32_t raw_loop;
     uint32_t raw_data_ofs;
-
-    (void)p;
 
     /* Zero the player state so the caller need not pre-zero */
     vgm_flags          = 0u;
@@ -709,13 +421,6 @@ vgm_status_t vgm_open(vgm_player_t *p,
     vgm_loop_offset    = 0u;
     vgm_data_start     = 0u;
     vgm_stream_pos     = 0u;
-    vgm_wait_armed_period = 0u;
-    vgm_last_cmd       = 0u;
-    vgm_debug_reported = 0u;
-    vgm_wait_snap_pre_valid = 0u;
-    vgm_wait_snap_post_valid = 0u;
-    vgm_wait_snap_hit_valid = 0u;
-    vgm_wait_snap_arm_valid = 0u;
     vgm_read_fn_ptr    = read_fn;
     vgm_seek_fn_ptr    = seek_fn;
     vgm_io_ctx         = io_ctx;
@@ -815,7 +520,7 @@ vgm_status_t vgm_open(vgm_player_t *p,
     opl_init(vgm_opl_mode);
 
     /* Seek to data and prime the buffer */
-    buf_seek(p, vgm_data_start);
+    buf_seek(vgm_data_start);
 
     return VGM_PLAYING;
 }
@@ -824,9 +529,8 @@ vgm_status_t vgm_open(vgm_player_t *p,
  * vgm_service -- inner dispatch loop
  * ----------------------------------------------------------------------- */
 __attribute__((noinline))
-vgm_status_t vgm_service(vgm_player_t *p)
+vgm_status_t vgm_service(void)
 {
-    (void)p;
     uint8_t cmd;
     uint8_t reg, val;
     uint32_t skip32;
@@ -839,36 +543,15 @@ vgm_status_t vgm_service(vgm_player_t *p)
 
     /* ----- Timer / wait handling ----- */
     if (vgm_flags & VGM_FLAG_TIMER_RUN) {
-#if VGM_DIAGNOSTIC_TRACE
-        dbg_capture_wait_snapshot(&vgm_wait_snap_pre);
-        vgm_wait_snap_pre_valid = 1u;
-#endif
-        if (!isTimerDone()) {
-#if VGM_DIAGNOSTIC_TRACE
-            if (!vgm_debug_reported) {
-                uint32_t now = readTimer0_consistent();
-                if (now > (vgm_wait_armed_period + VGM_DEBUG_LATE_WAIT_TICKS)) {
-                    dbg_report("WAIT_STUCK", now, vgm_wait_armed_period,
-                               vgm_last_period);
-                }
-            }
-#endif
+        if (!timer_t0_is_done()) {
             return VGM_WAITING;
         }
-#if VGM_DIAGNOSTIC_TRACE
-        dbg_capture_wait_snapshot(&vgm_wait_snap_hit);
-        vgm_wait_snap_hit_valid = 1u;
-#endif
         /* T0 fired (T0_CMP_CTR=0, no RECLEAR): the counter keeps running
          * past the compare value and cannot fire again until timer_set_period()
          * clears it with CTR_CLEAR for the next wait.  Read the current counter
          * value to credit elapsed real time to the general alarm subsystem,
          * then clear the timer-run flag. */
-        timer_tick_elapsed(vgm_last_period);
-#if VGM_DIAGNOSTIC_TRACE
-        dbg_capture_wait_snapshot(&vgm_wait_snap_post);
-        vgm_wait_snap_post_valid = 1u;
-#endif
+        timer_t0_tick_elapsed(vgm_last_period);
         vgm_flags &= (uint8_t)~VGM_FLAG_TIMER_RUN;
         vgm_flags |= VGM_FLAG_COMPENSATE;  /* arm overrun compensation */
         check_end_of_data = true;
@@ -877,7 +560,7 @@ vgm_status_t vgm_service(vgm_player_t *p)
             /* Remainder of a split wait: schedule next chunk. */
             uint32_t carry_ticks = vgm_wait_carry;
             vgm_wait_carry = 0u;
-            if (schedule_wait(p, carry_ticks)) { return VGM_WAITING; }
+            if (schedule_wait(carry_ticks)) { return VGM_WAITING; }
             /* Micro-wait done inline; fall through to dispatch. */
         }
         /* Fall through to dispatch the next command(s). */
@@ -894,7 +577,7 @@ vgm_status_t vgm_service(vgm_player_t *p)
 
         /* Buffer exhaustion guard */
         if (vgm_buf_pos >= vgm_buf_len) {
-            buf_refill(p);
+            buf_refill();
             if (vgm_buf_len == 0u) {
                 /* Unexpected EOF */
                 goto end_of_data;
@@ -902,21 +585,20 @@ vgm_status_t vgm_service(vgm_player_t *p)
         }
 
         cmd = vgm_buf[vgm_buf_pos++];
-        vgm_last_cmd = cmd;
 
         switch (cmd) {
 
         /* ---- OPL writes ---- */
         case 0x5Au:  /* YM3812 (OPL2) register write */
         case 0x5Eu:  /* YMF262 port 0 register write */
-            reg = buf_get(p);
-            val = buf_get(p);
+            reg = buf_get();
+            val = buf_get();
             opl_write_port0(reg, val);
             break;
 
         case 0x5Fu:  /* YMF262 port 1 register write */
-            reg = buf_get(p);
-            val = buf_get(p);
+            reg = buf_get();
+            val = buf_get();
             opl_write_port1(reg, val);
             break;
 
@@ -927,9 +609,9 @@ vgm_status_t vgm_service(vgm_player_t *p)
          * 200 Hz quantized sequences (vgm_quantize default) emit 220 samples;
          * special-case both to skip the hardware MULU call entirely. */
         case 0x61u: {
-            uint16_t samples = buf_get_le16(p);
+                uint16_t samples = buf_get_le16();
             vgm_samples_elapsed += (uint32_t)samples;
-            if (schedule_wait(p,
+                if (schedule_wait(
                     (samples == 441u) ? TICKS_100HZ :
                     (samples == 220u) ? TICKS_200HZ :
                     samples_to_ticks(samples))) { return VGM_WAITING; }
@@ -940,25 +622,22 @@ vgm_status_t vgm_service(vgm_player_t *p)
         /* Fixed waits: use precomputed tick constants -- no multiply needed. */
         case 0x62u:  /* Wait 735 samples (1/60 s, NTSC frame) */
             vgm_samples_elapsed += 735u;
-            if (schedule_wait(p, TICKS_ONE_NTSC)) { return VGM_WAITING; }
+            if (schedule_wait(TICKS_ONE_NTSC)) { return VGM_WAITING; }
             check_end_of_data = true;
             break; /* micro-wait done inline (never triggered in practice) */
 
         case 0x63u:  /* Wait 882 samples (1/50 s, PAL frame) */
             vgm_samples_elapsed += 882u;
-            if (schedule_wait(p, TICKS_ONE_PAL)) { return VGM_WAITING; }
+            if (schedule_wait(TICKS_ONE_PAL)) { return VGM_WAITING; }
             check_end_of_data = true;
             break; /* micro-wait done inline (never triggered in practice) */
 
         /* Short waits: 0x70-0x7F → wait (cmd & 0x0F)+1 samples.
          * Lookup table avoids per-call multiply. */
-        case 0x70u: case 0x71u: case 0x72u: case 0x73u:
-        case 0x74u: case 0x75u: case 0x76u: case 0x77u:
-        case 0x78u: case 0x79u: case 0x7Au: case 0x7Bu:
-        case 0x7Cu: case 0x7Du: case 0x7Eu: case 0x7Fu: {
+        case 0x70u ... 0x7Fu: {
             uint8_t s = (cmd & 0x0Fu) + 1u;
             vgm_samples_elapsed += (uint32_t)s;
-            if (schedule_wait(p, short_wait_ticks[s])) { return VGM_WAITING; }
+            if (schedule_wait(short_wait_ticks[s])) { return VGM_WAITING; }
             check_end_of_data = true;
             break; /* micro-wait (s≤4) done inline */
         }
@@ -966,14 +645,11 @@ vgm_status_t vgm_service(vgm_player_t *p)
         /* YM2612 PCM slot: 0x80-0x8F → wait (cmd & 0x0F) samples (no OPL write).
          * Lookup table used; index 0 short-circuits so schedule_wait(0) is
          * never called. */
-        case 0x80u: case 0x81u: case 0x82u: case 0x83u:
-        case 0x84u: case 0x85u: case 0x86u: case 0x87u:
-        case 0x88u: case 0x89u: case 0x8Au: case 0x8Bu:
-        case 0x8Cu: case 0x8Du: case 0x8Eu: case 0x8Fu: {
+        case 0x80u ... 0x8Fu: {
             uint8_t s = cmd & 0x0Fu;
             if (s > 0u) {
                 vgm_samples_elapsed += (uint32_t)s;
-                if (schedule_wait(p, short_wait_ticks[s])) { return VGM_WAITING; }
+                if (schedule_wait(short_wait_ticks[s])) { return VGM_WAITING; }
                 check_end_of_data = true;
                 /* micro-wait (s≤4) done inline */
             }
@@ -987,7 +663,7 @@ end_of_data:
                 /* Play the loop section once */
                 vgm_flags |= VGM_FLAG_LOOPED;
                 vgm_samples_elapsed = 0u;
-                buf_seek(p, vgm_loop_offset);
+                buf_seek(vgm_loop_offset);
                 /* Continue dispatching from the loop point */
                 break;
             }
@@ -998,9 +674,9 @@ end_of_data:
         /* ---- Data block (0x67) ---- */
         case 0x67u: {
             /* type (1) + compat (1) + size LE32 (4) -- skip the whole block */
-            buf_skip(p, 2u);                        /* type + compat bytes */
+            buf_skip(2u);                        /* type + compat bytes */
             /* Read the 4-byte block size then skip that many bytes. */
-            skip32 = buf_get_le32(p);
+            skip32 = buf_get_le32();
             {
                 uint16_t avail = (uint16_t)(vgm_buf_len - vgm_buf_pos);
                 if (skip32 <= (uint32_t)avail) {
@@ -1010,63 +686,37 @@ end_of_data:
                     uint32_t cur = vgm_stream_pos
                                  - (uint32_t)vgm_buf_len
                                  + (uint32_t)vgm_buf_pos;
-                    buf_seek(p, cur + skip32);
+                    buf_seek(cur + skip32);
                 }
             }
             break;
         }
 
         /* ---- Skip 1-operand commands ---- */
-        case 0x30u: case 0x31u: case 0x32u: case 0x33u:
-        case 0x34u: case 0x35u: case 0x36u: case 0x37u:
-        case 0x38u: case 0x39u: case 0x3Au: case 0x3Bu:
-        case 0x3Cu: case 0x3Du: case 0x3Eu: case 0x3Fu:
+        case 0x30u ... 0x3Fu:
         case 0x4Fu:  /* Game Gear PSG stereo, not applicable */
         case 0x50u:  /* PSG (SN76489) write, not applicable */
-            buf_skip(p, 1u);
+            buf_skip(1u);
             break;
 
         /* ---- Skip 2-operand commands ---- */
-        case 0x40u: case 0x41u: case 0x42u: case 0x43u:
-        case 0x44u: case 0x45u: case 0x46u: case 0x47u:
-        case 0x48u: case 0x49u: case 0x4Au: case 0x4Bu:
-        case 0x4Cu: case 0x4Du: case 0x4Eu:
-        case 0x51u: case 0x52u: case 0x53u: case 0x54u:
-        case 0x55u: case 0x56u: case 0x57u: case 0x58u:
-        case 0x59u:
-        case 0x5Bu: case 0x5Cu: case 0x5Du:
+        case 0x40u ... 0x4Eu:
+        case 0x51u ... 0x59u:
+        case 0x5Bu ... 0x5Du:
         case 0xA0u:
         /* 0xB0-0xC8 */
-        case 0xB0u: case 0xB1u: case 0xB2u: case 0xB3u:
-        case 0xB4u: case 0xB5u: case 0xB6u: case 0xB7u:
-        case 0xB8u: case 0xB9u: case 0xBAu: case 0xBBu:
-        case 0xBCu: case 0xBDu: case 0xBEu: case 0xBFu:
-        case 0xC0u: case 0xC1u: case 0xC2u: case 0xC3u:
-        case 0xC4u: case 0xC5u: case 0xC6u: case 0xC7u:
-        case 0xC8u:
-            buf_skip(p, 2u);
+        case 0xB0u ... 0xC8u:
+            buf_skip(2u);
             break;
 
         /* ---- Skip 3-operand commands ---- */
-        case 0xC9u: case 0xCAu: case 0xCBu: case 0xCCu:
-        case 0xCDu: case 0xCEu: case 0xCFu:
-        case 0xD0u: case 0xD1u: case 0xD2u: case 0xD3u:
-        case 0xD4u: case 0xD5u: case 0xD6u: case 0xD7u:
-        case 0xD8u: case 0xD9u: case 0xDAu: case 0xDBu:
-        case 0xDCu: case 0xDDu: case 0xDEu: case 0xDFu:
-            buf_skip(p, 3u);
+        case 0xC9u ... 0xDFu:
+            buf_skip(3u);
             break;
 
         /* ---- Skip 4-operand commands ---- */
-        case 0xE0u: case 0xE1u: case 0xE2u: case 0xE3u:
-        case 0xE4u: case 0xE5u: case 0xE6u: case 0xE7u:
-        case 0xE8u: case 0xE9u: case 0xEAu: case 0xEBu:
-        case 0xECu: case 0xEDu: case 0xEEu: case 0xEFu:
-        case 0xF0u: case 0xF1u: case 0xF2u: case 0xF3u:
-        case 0xF4u: case 0xF5u: case 0xF6u: case 0xF7u:
-        case 0xF8u: case 0xF9u: case 0xFAu: case 0xFBu:
-        case 0xFCu: case 0xFDu: case 0xFEu: case 0xFFu:
-            buf_skip(p, 4u);
+        case 0xE0u ... 0xFFu:
+            buf_skip(4u);
             break;
 
         default:
@@ -1078,7 +728,7 @@ end_of_data:
     } /* for(;;) */
 }
 
-void vgm_close(vgm_player_t *p)
+void vgm_close(void)
 {
     uint8_t i;
 
@@ -1101,9 +751,8 @@ void vgm_close(vgm_player_t *p)
     }
     opl_silence();
 
-    (void)p;
     vgm_flags = VGM_FLAG_DONE;
 
     /* Restore T0 to fixed-rate 24 Hz mode so general alarms resume normally */
-    setTimer0();
+    timer_t0_set();
 }

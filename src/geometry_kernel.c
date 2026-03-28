@@ -43,66 +43,10 @@ int16_t kernelWriteC(uint8_t fd, void *buf, uint16_t nbytes) {
     }
 }
 
-uint16_t vs1053_read_sci(uint8_t addr) {
-    POKE(VS_SCI_ADDR, addr);
-    POKE(VS_SCI_CTRL, CTRL_Start | CTRL_RWn);  // Activate xCS and start read
-    POKE(VS_SCI_CTRL, 0);                      // Deactivate xCS
-
-    while (PEEK(0xD700) & CTRL_Busy)
-        ;
-    uint16_t ret = ((uint16_t)PEEK(0xD703) << 8) | PEEK(0xD702);
-
-    return ret;
-}
-
-void vs1053_write_sci(uint8_t addr, uint16_t data) {
-    POKE(VS_SCI_ADDR, addr);
-    POKEW(VS_SCI_DATA, data);
-    POKE(VS_SCI_CTRL, CTRL_Start);  // start write
-    POKE(VS_SCI_CTRL, 0);           // deactivate
-    while (PEEK(0xD700) & CTRL_Busy)
-        ;
-    return;
-}
-
-static inline void vs1053_write_mem(uint16_t wram_addr, uint16_t data) {
-    vs1053_write_sci(SCI_WRAMADDR, wram_addr);
-    vs1053_write_sci(SCI_WRAM, data);
-}
-
-uint16_t vs1053_read_mem(uint16_t wram_addr) {
-    vs1053_write_sci(SCI_WRAMADDR, wram_addr);
-    return vs1053_read_sci(SCI_WRAM);
-}
 
 void vgk_plugin_init(void) {
     vs1053_write_mem(VGK_STATUS, 0x0000);  // Clear status
     vs1053_write_sci(SCI_AIADDR, 0x0050);
-}
-
-void vs1053_mute_dac(void) {
-    // This is a graphics-only application with no audio output.
-    // Writing 0xFEFE mutes both channels at ~63.5 dB attenuation, eliminating
-    // DAC click noise.  Muting alone does not disable the DAC interrupt; call
-    // vs1053_disable_dac_interrupt() if you are running a long plugin.
-    // Do NOT write 0xFFFF (DAC power-off) - that transition causes its own click.
-    vs1053_write_sci(SCI_VOL, 0xFEFE);
-}
-
-void vs1053_disable_dac_interrupt(void) {
-    // Clear only the DAC bit in INT_ENABLE register at X:0xC01A while keeping
-    // the other interrupt enables intact (particularly SCI).  Writing 0x0000
-    // would disable every interrupt, which is not what we want.
-    uint16_t reg = vs1053_read_mem(0xC01A);      // INT_ENABLE read
-    reg &= ~(1u << 0);                           // clear INT_EN_DAC
-    vs1053_write_mem(0xC01A, reg);
-}
-
-void vs1053_enable_dac_interrupt(void) {
-    // Re‑set the DAC bit in INT_ENABLE without touching other bits.
-    uint16_t reg = vs1053_read_mem(0xC01A);
-    reg |= (1u << 0);                            // set INT_EN_DAC
-    vs1053_write_mem(0xC01A, reg);
 }
 
 // Setup object transformation parameters

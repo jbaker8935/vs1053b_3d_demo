@@ -59,17 +59,5 @@ void vgm_himem_seek(void *ctx, uint32_t offset);
 /* Low-level 65816 MVN block copy; exposed for direct testing in main.c. */
 void movedown24(uint32_t dest, uint32_t src, uint16_t count);
 
-/*
- * vgm_himem_is_playable -- scan loaded VGM for sub-quantum timing complexity.
- *
- * Counts 0x70-0x7F short-wait opcodes and 0x61 waits shorter than 220 samples
- * (the 200 Hz grid).  If the count exceeds the internal threshold the VGM is
- * too timing-dense for real-time playback alongside the animation loop.
- *
- * Returns true if the file is within limits.  Returns false and prints a
- * diagnostic message if too complex; the caller should then skip vgm_open().
- * Quantize offline first with: python3 tools/vgm_quantize.py <file> --hz=200
- */
-bool vgm_himem_is_playable(const vgm_himem_ctx_t *ctx);
 
 #endif /* VGM_HIMEM_H */

@@ -4,43 +4,8 @@
 #include "../include/3d_math.h"
 #include "../include/3d_object.h"
 
-// K2 FPGA I/O addresses for VS1053b control and data registers
-#define VS_SCI_CTRL  0xD700
-#define VS_SCI_ADDR  0xD701
-#define VS_SCI_DATA  0xD702   //2 bytes
-#define VS_FIFO_COUNT 0xD704   //2 bytes
-#define VS_FIFO_DATA 0xD707
-
-//VS1053b specific SCI addresses
-#define VS_SCI_ADDR_MODE     0x00
-#define VS_SCI_ADDR_STATUS   0x0001
-#define VS_SCI_ADDR_BASS     0x0002
-#define VS_SCI_ADDR_CLOCKF   0x0003
-#define VS_SCI_ADDR_WRAM     0x0006
-#define VS_SCI_ADDR_WRAMADDR 0x0007
-#define VS_SCI_ADDR_VOL      0x000B
-
-
-//VS1053b CTRL modes
-#define    CTRL_Start   0x01 //1: start transfer, followed by 0 to stop
-#define    CTRL_RWn     0x02 //1: read mode, 0: write mode
-#define    CTRL_Busy    0x80 //if set, spi transfer is busy
-
-// VS1053b SCI register addresses
-#define SCI_MODE        0x00
-#define SCI_STATUS      0x01
-#define SCI_VOL         0x0B  // Volume: 0x0000=max, 0xFEFE=muted (~63.5dB atten), 0xFFFF=DAC off
-#define SCI_WRAMADDR    0x07
-#define SCI_WRAM        0x06
-#define SCI_AIADDR      0x0A
-#define SCI_AICTRL0     0x0C
-#define SCI_AICTRL1     0x0D
-#define SCI_AICTRL2     0x0E
-#define SCI_AICTRL3     0x0F
-// Memory space offsets for WRAMADDR
-#define IRAM_OFFSET     0x8000
-#define XRAM_OFFSET     0x0000
-#define YRAM_OFFSET     0x4000
+/* VS1053b register definitions and host helpers */
+#include "../include/vs1053b.h"
 // ==============================================================================
 // MEMORY MAP
 // ==============================================================================
@@ -367,12 +332,8 @@ typedef struct {
 
 void vgk_plugin_capture_state(PluginCapture *cap);
 
-// Mute the VS1053b DAC. 
-void vs1053_mute_dac(void);
-// Disable DAC interrupt so that audio processing memory can be used.
-// NOTE!!: DAC interrupt must be disabled for hidden-line and scene features.
-void vs1053_disable_dac_interrupt(void);
-void vs1053_enable_dac_interrupt(void);
+/* VS1053 helpers moved to vs1053b.h */
+
 
 // custom file write helper
 int16_t kernelWriteC(uint8_t fd, void *buf, uint16_t nbytes);

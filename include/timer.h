@@ -51,16 +51,15 @@ enum {
 // Animation callbacks fire every DEMO_ANIM_FRAME_INTERVAL render frames (24 fps at 24 Hz)
 #define DEMO_ANIM_FRAME_INTERVAL 1u
 
-void setTimer0(void);
-void resetTimer0(void);
-uint32_t readTimer0(void);
-uint32_t readTimer0_consistent(void);
-bool isTimerDone(void);
-void timer_service(void);
-void setAlarm(timer_alarm_id_t alarm, uint16_t ticks);
-void clearAlarm(timer_alarm_id_t alarm);
-bool checkAlarm(timer_alarm_id_t alarm);
-uint32_t getAlarmTicks(timer_alarm_id_t alarm);
+void timer_t0_set(void);
+void timer_t0_reset(void);
+uint32_t timer_t0_read(void);
+uint32_t timer_t0_read_consistent(void);
+bool timer_t0_is_done(void);
+void timer_t0_alarm_set(timer_alarm_id_t alarm, uint16_t ticks);
+void timer_t0_alarm_clear(timer_alarm_id_t alarm);
+bool timer_t0_alarm_check(timer_alarm_id_t alarm);
+uint32_t timer_t0_alarm_ticks_get(timer_alarm_id_t alarm);
 
 /* Variable-rate T0 sharing -- used by the VGM library.
  *
@@ -78,27 +77,9 @@ uint32_t getAlarmTicks(timer_alarm_id_t alarm);
  *
  *   After calling timer_tick_elapsed() the VGM library programs the next
  *   period with timer_set_period().  When VGM playback ends, calling
- *   setTimer0() restores fixed-rate (30 Hz) mode.
+ *   timer_t0_set() restores fixed-rate (30 Hz) mode.
  */
-void timer_set_period(uint32_t ticks);
-void timer_tick_elapsed(uint32_t ticks);
-
-typedef struct {
-	uint32_t seq;
-	const char *action;
-	uint32_t period;
-	bool fixed_rate;
-	uint8_t pend;
-	uint8_t stat;
-	uint8_t ctr;
-	uint8_t cmp_ctr;
-	uint32_t t0_val;
-	uint32_t t0_cmp;
-} timer_debug_event_t;
-
-const char *timer_debug_last_action(void);
-uint32_t timer_debug_last_period(void);
-bool timer_debug_is_fixed_rate(void);
-uint8_t timer_debug_get_history(timer_debug_event_t *out, uint8_t max_events);
+void timer_period_set(uint32_t ticks);
+void timer_t0_tick_elapsed(uint32_t ticks);
 
 #endif // SRC_TIMER_H__

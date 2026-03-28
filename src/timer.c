@@ -4,7 +4,7 @@
 
 /* Stored in dot-clock ticks so that variable-rate T0 periods can be
  * subtracted directly without a unit conversion at service time.
- * setAlarm() still accepts T0_TICK_FREQ-Hz tick counts; it converts on entry.
+ * timer_t0_alarm_set() still accepts T0_TICK_FREQ-Hz tick counts; it converts on entry.
  */
 static uint32_t alarm_ticks[TIMER_ALARM_COUNT] = {0};
 static uint8_t  alarm_active_mask = 0u;
@@ -16,47 +16,21 @@ static uint32_t g_last_period = T0_TICK_PERIOD_TICKS;
 /* When false – the VGM library owns T0 re-arming; we only service       */
 /*              alarms and clear T0_PEND.                                 */
 static bool g_fixed_rate = true;
-static const char *g_last_action = "boot";
-static uint32_t g_last_action_period = T0_TICK_PERIOD_TICKS;
 
 /* Watchdog counter for T0_PEND miss recovery.
- * Incremented on every isTimerDone() call that sees PEND=0 in variable-rate
+ * Incremented on every timer_t0_is_done() call that sees PEND=0 in variable-rate
  * mode.  When it wraps (every 256 polls) the counter is read as a fallback
  * in case T0_PEND failed to assert (hardware bug, ~1 in 100,000 events).
  * Reset to 0 on each timer_set_period() arm so T0_PEND firing normally
  * (before 256 polls accumulate) keeps the overhead at exactly 1 PEEK/poll. */
 static uint8_t g_pend_watchdog = 0u;
 
-#define TIMER_DEBUG_HISTORY_LEN 8u
-static timer_debug_event_t g_history[TIMER_DEBUG_HISTORY_LEN];
-static uint8_t g_history_head = 0u;
-static uint32_t g_history_seq = 0u;
 
-static void timer_debug_mark(const char *action, uint32_t period)
-{
-	uint8_t slot = g_history_head++ & (TIMER_DEBUG_HISTORY_LEN - 1u);
-	g_history_seq++;
-	g_last_action = action;
-	g_last_action_period = period;
-	g_history[slot].seq = g_history_seq;
-	g_history[slot].action = action;
-	g_history[slot].period = period;
-	g_history[slot].fixed_rate = g_fixed_rate;
-	g_history[slot].pend = (uint8_t)(PEEK(T0_PEND) & 0xFFu);
-	g_history[slot].stat = (uint8_t)(PEEK(T0_STAT) & 0xFFu);
-	g_history[slot].ctr = (uint8_t)(PEEK(T0_CTR) & 0xFFu);
-	g_history[slot].cmp_ctr = (uint8_t)(PEEK(T0_CMP_CTR) & 0xFFu);
-	g_history[slot].t0_val = readTimer0();
-	g_history[slot].t0_cmp = (uint32_t)PEEK(T0_CMP_L)
-					   | ((uint32_t)PEEK(T0_CMP_M) << 8u)
-					   | ((uint32_t)PEEK(T0_CMP_H) << 16u);
-}
-
-static uint8_t alarm_bit(timer_alarm_id_t alarm) {
+static uint8_t timer_alarm_bit(timer_alarm_id_t alarm) {
 	return (uint8_t)(1u << ((uint8_t)alarm & 7u));
 }
 
-static void timer0_mask_irq_source(void)
+static void timer_t0_irq_mask(void)
 {
 	/* Polling mode: keep Timer0 masked at the interrupt controller so
 	 * compare events do not route to CPU IRQ handlers/kernel IRQ events. */
@@ -64,13 +38,13 @@ static void timer0_mask_irq_source(void)
 	POKE(T0_MASK, (uint8_t)(mask | T0_PEND_BIT));
 }
 
-static void timer0_clear_pending(void)
+static void timer_t0_pend_clear(void)
 {
 	/* Interrupt controller PENDING registers are write-1-to-clear. */
 	POKE(T0_PEND, T0_PEND_BIT);
 }
 
-static void serviceTimer0(void) {
+static void timer_t0_service(void) {
 	/* In variable-rate (VGM) mode the VGM library owns T0_PEND.
 	 * vgm_service() must be the one to consume it.  If we clear it here
 	 * first, vgm_service() will never see the fire and will wait forever:
@@ -80,22 +54,16 @@ static void serviceTimer0(void) {
 	if (!g_fixed_rate) {
 		return;
 	}
-	if (!isTimerDone()) {
+	if (!timer_t0_is_done()) {
 		return;
 	}
 	/* Fixed-rate mode: consume the pending flag, service alarms, re-arm. */
-	timer_tick_elapsed(g_last_period);
-	setTimer0();
+	timer_t0_tick_elapsed(g_last_period);
+	timer_t0_set();
 }
 
 
-
-void timer_service(void) {
-	serviceTimer0();
-}
-
-
-void setTimer0()
+void timer_t0_set()
 {
 	/* Restore fixed-rate 30 Hz mode.  Called by vgm_close() to hand T0
 	 * back to the general alarm subsystem after VGM playback ends.
@@ -103,9 +71,8 @@ void setTimer0()
 	 * periodic T0_PEND flags without needing to re-arm each time. */
 	g_last_period = T0_TICK_PERIOD_TICKS;
 	g_fixed_rate  = true;
-	timer_debug_mark("setTimer0", g_last_period);
-	timer0_mask_irq_source();
-	timer0_clear_pending();
+	timer_t0_irq_mask();
+	timer_t0_pend_clear();
 	POKE(T0_CTR, CTR_CLEAR);
 	POKE(T0_CMP_L, T0_TICK_CMP_L);
 	POKE(T0_CMP_M, T0_TICK_CMP_M);
@@ -115,46 +82,53 @@ void setTimer0()
 	POKE(T0_CTR, CTR_INTEN | CTR_UPDOWN | CTR_ENABLE);
 }
 
-void resetTimer0()
+void timer_t0_reset()
 {
-	timer_debug_mark("resetTimer0", g_last_period);
-	timer0_mask_irq_source();
-	timer0_clear_pending();
+	timer_t0_irq_mask();
+	timer_t0_pend_clear();
 	POKE(T0_CMP_CTR, 0);
 	POKE(T0_CTR, CTR_CLEAR);
 	POKE(T0_CTR, CTR_INTEN | CTR_UPDOWN | CTR_ENABLE);
 }
-uint32_t readTimer0()
+uint32_t timer_t0_read()
 {
 	return (uint32_t)((PEEK(T0_VAL_H)))<<16 | (uint32_t)((PEEK(T0_VAL_M)))<<8 | (uint32_t)((PEEK(T0_VAL_L)));
 }
 
-uint32_t readTimer0_consistent(void)
+uint32_t timer_t0_read_consistent(void)
 {
-	// Attempt a consistent snapshot of the 24-bit counter.
-	// If the high byte changes during the read, re-sample the low bytes once.
-	for (uint8_t tries = 0u; tries < 2u; ++tries) {
-		const uint8_t h1 = PEEK(T0_VAL_H);
-		uint8_t m = PEEK(T0_VAL_M);
-		uint8_t l = PEEK(T0_VAL_L);
-		const uint8_t h2 = PEEK(T0_VAL_H);
-		if (h1 == h2) {
-			return ((uint32_t)h1 << 16) | ((uint32_t)m << 8) | (uint32_t)l;
-		}
-		// High byte rolled; re-read M/L (use the later high byte).
-		m = PEEK(T0_VAL_M);
-		l = PEEK(T0_VAL_L);
-		return ((uint32_t)h2 << 16) | ((uint32_t)m << 8) | (uint32_t)l;
-	}
-	return readTimer0();
+
+   /* Consistent 24-bit read: retry until high and middle bytes are stable. */
+    uint8_t h, m, l, h2, m2;
+    do {
+        h  = PEEK(T0_VAL_H);
+        m  = PEEK(T0_VAL_M);
+        l  = PEEK(T0_VAL_L);
+        h2 = PEEK(T0_VAL_H);
+        m2 = PEEK(T0_VAL_M);
+    } while (h2 != h || m2 != m);
+
+    return ((uint32_t)h << 16) | ((uint32_t)m << 8) | (uint32_t)l;
+
+    /* Retry for High byte stability */
+	/* Accurate to 10us if M byte rolls during read */
+    // uint8_t h1, h2, m, l;
+    // do {
+    //     h1 = PEEK(T0_VAL_H);
+    //     m  = PEEK(T0_VAL_M);
+    //     l  = PEEK(T0_VAL_L);
+    //     h2 = PEEK(T0_VAL_H);
+    // } while (h1 != h2);
+
+    // return ((uint32_t)h1 << 16) | ((uint32_t)m << 8) | (uint32_t)l; 
 }
 
 /* --- New public API -------------------------------------------------- */
 
-void timer_set_period(uint32_t ticks)
+void timer_period_set(uint32_t ticks)
 {
 	/* Program T0 for a one-shot variable-rate period.
-	 * Matches the reference player's setTimer0() register sequence exactly:
+	 * Matches the reference player's timer_t0_set() register sequence exactly:
 	 *   1. CTR_CLEAR        → counter to 0
 	 *   2. CMP_L/M/H        → load compare value
 	 *   3. CMP_CTR = RELOAD → latch compare bytes
@@ -175,8 +149,8 @@ void timer_set_period(uint32_t ticks)
 	g_last_period    = ticks;
 	g_fixed_rate     = false;
 	g_pend_watchdog  = 0u;  /* reset before each arm */
-	timer0_mask_irq_source();
-	timer0_clear_pending();
+	timer_t0_irq_mask();
+	timer_t0_pend_clear();
 	POKE(T0_CTR, CTR_CLEAR);
 	POKE(T0_CMP_L, (uint8_t)(ticks));
 	POKE(T0_CMP_M, (uint8_t)(ticks >> 8u));
@@ -185,17 +159,14 @@ void timer_set_period(uint32_t ticks)
 	POKE(T0_CMP_CTR, 0);  /* one-shot: counter keeps running past match for overrun calc */
 	POKE(T0_CTR, CTR_CLEAR);
 	POKE(T0_CTR, CTR_INTEN | CTR_UPDOWN | CTR_ENABLE);
-	timer_debug_mark("timer_set_period_armed", ticks);
 }
 
-void timer_tick_elapsed(uint32_t ticks)
+void timer_t0_tick_elapsed(uint32_t ticks)
 {
 	/* Clear the T0 pending flag so that only one caller (VGM service or
 	 * timer_service) processes each expiry — whichever arrives first wins
 	 * because the second will see T0_PEND already clear and bail out. */
-	timer_debug_mark("timer_tick_elapsed", ticks);
-	timer0_clear_pending();
-	timer_debug_mark("timer_tick_elapsed_clear", ticks);
+	timer_t0_pend_clear();
 	if (alarm_active_mask == 0u) {
 		return;
 	}
@@ -204,50 +175,16 @@ void timer_tick_elapsed(uint32_t ticks)
 			alarm_ticks[index] = (alarm_ticks[index] > ticks)
 				? alarm_ticks[index] - ticks : 0u;
 			if (alarm_ticks[index] == 0u) {
-				alarm_active_mask &= (uint8_t)~alarm_bit((timer_alarm_id_t)index);
+				alarm_active_mask &= (uint8_t)~timer_alarm_bit((timer_alarm_id_t)index);
 			}
 		}
 	}
 }
 
-const char *timer_debug_last_action(void)
-{
-	return g_last_action;
-}
-
-uint32_t timer_debug_last_period(void)
-{
-	return g_last_action_period;
-}
-
-bool timer_debug_is_fixed_rate(void)
-{
-	return g_fixed_rate;
-}
-
-uint8_t timer_debug_get_history(timer_debug_event_t *out, uint8_t max_events)
-{
-	uint8_t count = (g_history_seq < TIMER_DEBUG_HISTORY_LEN)
-					 ? (uint8_t)g_history_seq
-					 : (uint8_t)TIMER_DEBUG_HISTORY_LEN;
-	uint8_t copied = 0u;
-	if (out == NULL || max_events == 0u || count == 0u) {
-		return 0u;
-	}
-	if (count > max_events) {
-		count = max_events;
-	}
-	while (copied < count) {
-		uint8_t slot = (uint8_t)((g_history_head - 1u - copied) & (TIMER_DEBUG_HISTORY_LEN - 1u));
-		out[copied] = g_history[slot];
-		++copied;
-	}
-	return copied;
-}
 
 /* --- Existing public API (restored / updated) ------------------------- */
 
-bool isTimerDone()
+bool timer_t0_is_done()
 {
 	/* Fast path: T0_PEND is reliable 99.999% of the time (1 PEEK, same as
 	 * the original implementation).  Reset the watchdog whenever it fires. */
@@ -266,11 +203,11 @@ bool isTimerDone()
 		return false;
 	}
 	/* Watchdog fired (poll 256, 512, ...): verify via counter. */
-	return readTimer0_consistent() >= g_last_period;
+	return timer_t0_read_consistent() >= g_last_period;
 }
 
-uint32_t getAlarmTicks(timer_alarm_id_t alarm) {
-	serviceTimer0();
+uint32_t timer_t0_alarm_ticks_get(timer_alarm_id_t alarm) {
+	timer_t0_service();
 
 	if (alarm >= TIMER_ALARM_COUNT) {
 		return 0u;
@@ -279,12 +216,12 @@ uint32_t getAlarmTicks(timer_alarm_id_t alarm) {
 	return alarm_ticks[alarm];
 }
 
-void setAlarm(timer_alarm_id_t alarm, uint16_t ticks) {
+void timer_t0_alarm_set(timer_alarm_id_t alarm, uint16_t ticks) {
 	if (alarm >= TIMER_ALARM_COUNT) {
 		return;
 	}
 
-	serviceTimer0();
+	timer_t0_service();
 
 	/* Convert caller's 30-Hz tick count to dot-clock ticks so that
 	 * alarm_ticks[] can be decremented directly by timer_tick_elapsed()
@@ -292,29 +229,29 @@ void setAlarm(timer_alarm_id_t alarm, uint16_t ticks) {
 	alarm_ticks[alarm] = (uint32_t)ticks * (uint32_t)T0_TICK_PERIOD_TICKS;
 
 	if (ticks > 0u) {
-		alarm_active_mask |= alarm_bit(alarm);
+		alarm_active_mask |= timer_alarm_bit(alarm);
 	} else {
-		alarm_active_mask &= (uint8_t)~alarm_bit(alarm);
+		alarm_active_mask &= (uint8_t)~timer_alarm_bit(alarm);
 	}
 
 	if (g_fixed_rate) {
-		setTimer0();
+		timer_t0_set();
 	}
 }
 
-void clearAlarm(timer_alarm_id_t alarm) {
+void timer_t0_alarm_clear(timer_alarm_id_t alarm) {
 	if (alarm >= TIMER_ALARM_COUNT) {
 		return;
 	}
 
-	serviceTimer0();
+	timer_t0_service();
 
 	alarm_ticks[alarm] = 0u;
-	alarm_active_mask &= (uint8_t)~alarm_bit(alarm);
+	alarm_active_mask &= (uint8_t)~timer_alarm_bit(alarm);
 }
 
-bool checkAlarm(timer_alarm_id_t alarm) {
-	serviceTimer0();
+bool timer_t0_alarm_check(timer_alarm_id_t alarm) {
+	timer_t0_service();
 
 	if (alarm >= TIMER_ALARM_COUNT) {
 		return true;
@@ -322,3 +259,4 @@ bool checkAlarm(timer_alarm_id_t alarm) {
 
 	return (alarm_ticks[alarm] == 0u);
 }
+
