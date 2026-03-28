@@ -192,6 +192,11 @@ bool timer_t0_is_done()
 	if (g_fixed_rate) {
 		return false;
 	}
+	/* Variable-rate mode:
+	 * The watchdog fallback is muted for testing: rely solely on T0_PEND.
+	 * The original watchdog increment and counter-check are retained below
+	 * but disabled with a preprocessor guard so they can be restored easily. */
+#if 0
 	/* Variable-rate mode: T0_PEND very rarely fails to assert in one-shot
 	 * mode (hardware bug).  Check the counter as a fallback only every 256
 	 * polls so the added cost is ~0.4% vs the original single-PEEK path.
@@ -201,6 +206,10 @@ bool timer_t0_is_done()
 	}
 	/* Watchdog fired (poll 256, 512, ...): verify via counter. */
 	return timer_t0_read_consistent() >= g_last_period;
+#else
+	/* Watchdog muted: do not perform the counter fallback. */
+	return false;
+#endif
 }
 
 uint32_t timer_t0_alarm_ticks_get(timer_alarm_id_t alarm) {

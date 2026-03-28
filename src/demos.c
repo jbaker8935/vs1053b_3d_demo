@@ -157,8 +157,8 @@ static const Demo demo2 = {
 static const SceneObjectParams demo3_init[] = {
     { .slot=1, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=100, .pos_z=-2000 },
     { .slot=6, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=100, .pos_z=-2000 },            
-    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=0, .pos_z=0 },
-    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=0, .pos_z=0 },
+    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=200, .pos_z=1400 },
+    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=200, .pos_z=1400 },
 };
 
 static const Model3D * const demo3_models[] = { &g_model_anaconda, &g_model_projectile,
@@ -279,8 +279,8 @@ static Model3D  g_d4_anaconda;
 
 static const SceneObjectParams demo4_init[] = {
     { .slot=1, .yaw=20, .pitch=10, .roll=0, .scale=160, .pos_x=-100, .pos_y=200, .pos_z=400 },
-    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=0, .pos_z=0 },
-    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=0, .pos_z=0 },     
+    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=200, .pos_z=1400 },
+    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=200, .pos_z=1400 },     
 };
 
 static void demo4_enter(void) {
