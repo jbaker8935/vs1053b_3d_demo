@@ -12,7 +12,7 @@ static uint8_t  alarm_active_mask = 0u;
 /* --- T0 mode state --------------------------------------------------- */
 /* Period (in dot-clock ticks) that was last programmed into T0.         */
 static uint32_t g_last_period = T0_TICK_PERIOD_TICKS;
-/* When true  – serviceTimer0() re-arms T0 at T0_TICK_PERIOD_TICKS.     */
+/* When true  – timer_t0_service() re-arms T0 at T0_TICK_PERIOD_TICKS.     */
 /* When false – the VGM library owns T0 re-arming; we only service       */
 /*              alarms and clear T0_PEND.                                 */
 static bool g_fixed_rate = true;
@@ -65,9 +65,9 @@ static void timer_t0_service(void) {
 
 void timer_t0_set()
 {
-	/* Restore fixed-rate 30 Hz mode.  Called by vgm_close() to hand T0
+	/* Restore fixed-rate mode.  Called by vgm_close() to hand T0
 	 * back to the general alarm subsystem after VGM playback ends.
-	 * Uses RECLEAR mode for the 30 Hz tick so timer_service() sees
+	 * Uses RECLEAR mode for the tick so timer_service() sees
 	 * periodic T0_PEND flags without needing to re-arm each time. */
 	g_last_period = T0_TICK_PERIOD_TICKS;
 	g_fixed_rate  = true;
@@ -110,7 +110,7 @@ uint32_t timer_t0_read_consistent(void)
 
     return ((uint32_t)h << 16) | ((uint32_t)m << 8) | (uint32_t)l;
 
-    /* Retry for High byte stability */
+    /* Retry logic for High only byte stability */
 	/* Accurate to 10us if M byte rolls during read */
     // uint8_t h1, h2, m, l;
     // do {
@@ -161,8 +161,7 @@ void timer_period_set(uint32_t ticks)
 void timer_t0_tick_elapsed(uint32_t ticks)
 {
 	/* Clear the T0 pending flag so that only one caller (VGM service or
-	 * timer_service) processes each expiry — whichever arrives first wins
-	 * because the second will see T0_PEND already clear and bail out. */
+	 * timer_service) processes the event. */
 	timer_t0_pend_clear();
 	if (alarm_active_mask == 0u) {
 		return;
@@ -178,13 +177,9 @@ void timer_t0_tick_elapsed(uint32_t ticks)
 	}
 }
 
-
-/* --- Existing public API (restored / updated) ------------------------- */
-
 bool timer_t0_is_done()
 {
-	/* Fast path: T0_PEND is reliable 99.999% of the time (1 PEEK, same as
-	 * the original implementation).  Reset the watchdog whenever it fires. */
+
 	if ((PEEK(T0_PEND) & T0_PEND_BIT) != 0u) {
 		g_pend_watchdog = 0u;
 		return true;
@@ -192,15 +187,9 @@ bool timer_t0_is_done()
 	if (g_fixed_rate) {
 		return false;
 	}
-	/* Variable-rate mode:
-	 * The watchdog fallback is muted for testing: rely solely on T0_PEND.
-	 * The original watchdog increment and counter-check are retained below
-	 * but disabled with a preprocessor guard so they can be restored easily. */
-#if 0
-	/* Variable-rate mode: T0_PEND very rarely fails to assert in one-shot
-	 * mode (hardware bug).  Check the counter as a fallback only every 256
-	 * polls so the added cost is ~0.4% vs the original single-PEEK path.
-	 * At typical polling rates a hardware miss is caught within <2 ms. */
+
+#if 1
+	/* Variable-rate mode: Once every 256 polls, verify via counter read. */
 	if (++g_pend_watchdog != 0u) {
 		return false;
 	}
@@ -229,7 +218,7 @@ void timer_t0_alarm_set(timer_alarm_id_t alarm, uint16_t ticks) {
 
 	timer_t0_service();
 
-	/* Convert caller's 30-Hz tick count to dot-clock ticks so that
+	/* Convert caller's tick count to dot-clock ticks so that
 	 * alarm_ticks[] can be decremented directly by timer_tick_elapsed()
 	 * regardless of whether T0 is running at fixed or variable rate. */
 	alarm_ticks[alarm] = (uint32_t)ticks * (uint32_t)T0_TICK_PERIOD_TICKS;

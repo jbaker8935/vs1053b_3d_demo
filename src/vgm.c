@@ -310,12 +310,7 @@ static __attribute__((always_inline)) bool schedule_wait_arm(uint32_t ticks)
  * but the original wait is ≤ VGM_MIN_MICRO_WAIT_TICKS, the wait is honoured
  * in full via spin_wait() instead.  This keeps the L/R write-pair spacing the
  * VGM author intended, even during catch-up.
- *
- * Proportional compression floor: compressed ticks are clamped to at least
- * ticks/VGM_CATCHUP_DIVISOR (>= VGM_CATCHUP_TICKS).  This prevents stereo
- * delay effects -- such as the R-channel note triggering 1-2 ticks (10-20 ms)
- * before the L-channel note in furnace_bgm.vgm -- from collapsing below
- * audible thresholds during catch-up. */
+ */
 static bool schedule_wait_catchup(uint32_t ticks)
 {
     /* Stage 1: measure dispatch overrun after a real T0 fire. */
