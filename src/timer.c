@@ -128,20 +128,17 @@ uint32_t timer_t0_read_consistent(void)
 void timer_period_set(uint32_t ticks)
 {
 	/* Program T0 for a one-shot variable-rate period.
-	 * Matches the reference player's timer_t0_set() register sequence exactly:
 	 *   1. CTR_CLEAR        → counter to 0
 	 *   2. CMP_L/M/H        → load compare value
 	 *   3. CMP_CTR = RELOAD → latch compare bytes
 	 *   4. CMP_CTR = 0      → single-fire, no reclear/reload
-	 *   5. CTR_CLEAR         → counter to 0 (redundant but matches reference)
+	 *   5. CTR_CLEAR         → counter to 0 (redundant)
 	 *   6. CTR_INTEN|UPDOWN|ENABLE → start counting with interrupt enable
 	 *
 	 * Keep CTR_INTEN set so Timer0 compare events also update INT_PENDING_0
 	 * bit 4. This is useful for diagnostics and keeps behavior consistent
 	 * with fixed-rate mode. Timer0 remains IRQ-masked via INT_MASK_0.
-	 *
-	 * No overhead compensation — the reference player doesn't use any and
-	 * runs smoothly.  The small per-frame dispatch overhead is inaudible. */
+ */
 	ticks &= (uint32_t)T0_MASK_TICKS;
 	if (ticks == 0u) {
 		ticks = 1u;
