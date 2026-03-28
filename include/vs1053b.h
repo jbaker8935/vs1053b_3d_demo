@@ -43,15 +43,15 @@
 #define YRAM_OFFSET     0x4000
 
 /* VS1053 host helper API */
-uint16_t vs1053_read_sci(uint8_t addr);
-void vs1053_write_sci(uint8_t addr, uint16_t data);
-void vs1053_write_mem(uint16_t wram_addr, uint16_t data);
-uint16_t vs1053_read_mem(uint16_t wram_addr);
+uint16_t vs1053_sci_read(uint8_t addr);
+void vs1053_sci_write(uint8_t addr, uint16_t data);
+void vs1053_mem_write(uint16_t wram_addr, uint16_t data);
+uint16_t vs1053_mem_read(uint16_t wram_addr);
 
 /* DAC / interrupt helpers */
-void vs1053_mute_dac(void);
-void vs1053_disable_dac_interrupt(void);
-void vs1053_enable_dac_interrupt(void);
+void vs1053_dac_mute(void);
+void vs1053_dac_interrupt_disable(void);
+void vs1053_dac_interrupt_enable(void);
 
 /* Plugin helpers */
 void vs1053_plugin_init(uint16_t size_words);

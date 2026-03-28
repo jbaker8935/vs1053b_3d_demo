@@ -33,7 +33,7 @@ static bool            g_vgm_open = false;
 static const char     *g_vgm_path = NULL;
 
 /* Re-arm the player from the beginning of the cached stream. */
-static void vgm_start(void) {
+static void start_vgm_playback(void) {
     g_vgm_himem.pos = 0u;  /* reset so vgm_open() reads header from pos 0 */
     g_vgm_open = (vgm_open(vgm_himem_read, vgm_himem_seek,
                            &g_vgm_himem) == VGM_PLAYING);
@@ -41,19 +41,19 @@ static void vgm_start(void) {
 
 /* Load VGM into high memory (one-time SD read), then start playback.
  * Silently returns on any failure so the demo still runs without audio. */
-static void vgm_init(const char *path) {
+static void initialize_vgm_playback(const char *path) {
     if (!vgm_himem_load(path, VGM_HIMEM_BASE, &g_vgm_himem)) return;
-    vgm_start();
+    start_vgm_playback();
 }
 
 /* Service one VGM step; loop automatically on end-of-stream. */
-static void vgm_tick(void) {
+static void process_vgm_tick(void) {
     if (!g_vgm_open) return;
     vgm_status_t s = vgm_service();
 
     if (s == VGM_DONE) {
         vgm_close();  /* silence chip, restore fixed-rate T0 */
-        vgm_start();               /* loop: re-open from cached stream      */
+        start_vgm_playback();               /* loop: re-open from cached stream      */
     } else if (s == VGM_ERROR) {
         vgm_close();
         g_vgm_open = false;
@@ -74,8 +74,8 @@ int main(int argc, char *argv[]) {
     vs1053_clock_boost();
     vs1053_plugin_load();
     vgk_plugin_init();
-    vs1053_mute_dac();
-    vs1053_disable_dac_interrupt();
+    vs1053_dac_mute();
+    vs1053_dac_interrupt_disable(); // Decoder RAM is being used.
     game_state_init(STATE_DEMO);
     input_handler_init();
     video_init();
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
     init_models();
     codec_init();
     if (g_vgm_path != NULL) {
-      vgm_init(g_vgm_path); /* start VGM after VS1053B is fully set up */
+      initialize_vgm_playback(g_vgm_path); /* start VGM after VS1053B is fully set up */
       if (!g_vgm_open) {
         textPrint("Failed to load VGM file (");
         textPrint(g_vgm_path);
@@ -99,7 +99,8 @@ int main(int argc, char *argv[]) {
         }
       }
     }
-    vgk_yield_cb_set(vgm_tick);  /* service audio during DSP waits */
+
+    vgk_yield_cb_set(process_vgm_tick);  /* service audio during DSP waits */
 
     demos_register();
     demo_engine_start(0);
@@ -119,7 +120,7 @@ int main(int argc, char *argv[]) {
         input_state_clear_edges(input);
 
         while (!timer_t0_alarm_check(TIMER_ALARM_GENERAL0)) {
-            vgm_tick();  /* service VGM while waiting for next frame tick */
+            process_vgm_tick();  /* service VGM while waiting for next frame tick */
         }
         timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 1);
     }
@@ -127,7 +128,7 @@ int main(int argc, char *argv[]) {
     if (g_vgm_open) {
         vgm_close();
     }
-    timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 1);  /* one second exit wait */
+    timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 1);  /* 1/T0_TICK_FREQ exit wait */
     while(true) {
         if (timer_t0_alarm_check(TIMER_ALARM_GENERAL0)) {
             break;

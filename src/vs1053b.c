@@ -4,7 +4,7 @@
 
 EMBED(plugin_data,"assets/plugin.bin",0x10000lu);
 
-uint16_t vs1053_read_sci(uint8_t addr) {
+uint16_t vs1053_sci_read(uint8_t addr) {
     POKE(VS_SCI_ADDR, addr);
     POKE(VS_SCI_CTRL, CTRL_Start | CTRL_RWn);  /* Activate xCS and start read */
     POKE(VS_SCI_CTRL, 0);                      /* Deactivate xCS */
@@ -16,7 +16,7 @@ uint16_t vs1053_read_sci(uint8_t addr) {
     return ret;
 }
 
-void vs1053_write_sci(uint8_t addr, uint16_t data) {
+void vs1053_sci_write(uint8_t addr, uint16_t data) {
     POKE(VS_SCI_ADDR, addr);
     POKEW(VS_SCI_DATA, data);
     POKE(VS_SCI_CTRL, CTRL_Start);  /* start write */
@@ -26,35 +26,35 @@ void vs1053_write_sci(uint8_t addr, uint16_t data) {
     return;
 }
 
-void vs1053_write_mem(uint16_t wram_addr, uint16_t data) {
-    vs1053_write_sci(SCI_WRAMADDR, wram_addr);
-    vs1053_write_sci(SCI_WRAM, data);
+void vs1053_mem_write(uint16_t wram_addr, uint16_t data) {
+    vs1053_sci_write(SCI_WRAMADDR, wram_addr);
+    vs1053_sci_write(SCI_WRAM, data);
 }
 
-uint16_t vs1053_read_mem(uint16_t wram_addr) {
-    vs1053_write_sci(SCI_WRAMADDR, wram_addr);
-    return vs1053_read_sci(SCI_WRAM);
+uint16_t vs1053_mem_read(uint16_t wram_addr) {
+    vs1053_sci_write(SCI_WRAMADDR, wram_addr);
+    return vs1053_sci_read(SCI_WRAM);
 }
 
-void vs1053_mute_dac(void) {
+void vs1053_dac_mute(void) {
     /* Mute both channels (~63.5 dB attenuation) */
-    vs1053_write_sci(SCI_VOL, 0xFEFE);
+    vs1053_sci_write(SCI_VOL, 0xFEFE);
 }
 
-void vs1053_disable_dac_interrupt(void) {
-    uint16_t reg = vs1053_read_mem(0xC01A);      /* INT_ENABLE read */
+void vs1053_dac_interrupt_disable(void) {
+    uint16_t reg = vs1053_mem_read(0xC01A);      /* INT_ENABLE read */
     reg &= ~(1u << 0);                           /* clear INT_EN_DAC */
-    vs1053_write_mem(0xC01A, reg);
+    vs1053_mem_write(0xC01A, reg);
 }
 
-void vs1053_enable_dac_interrupt(void) {
-    uint16_t reg = vs1053_read_mem(0xC01A);
+void vs1053_dac_interrupt_enable(void) {
+    uint16_t reg = vs1053_mem_read(0xC01A);
     reg |= (1u << 0);                            /* set INT_EN_DAC */
-    vs1053_write_mem(0xC01A, reg);
+    vs1053_mem_write(0xC01A, reg);
 }
 
 /* -----------------------------------------------------------------------
- * Plugin load/clock helpers (migrated from load_plugin.c)
+ * Plugin load/clock helpers
  * ----------------------------------------------------------------------- */
 void vs1053_plugin_init(uint16_t size) {
   uint16_t n;
