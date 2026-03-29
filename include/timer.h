@@ -77,7 +77,7 @@ uint32_t timer_t0_alarm_ticks_get(timer_alarm_id_t alarm);
  *
  *   After calling timer_tick_elapsed() the VGM library programs the next
  *   period with timer_set_period().  When VGM playback ends, calling
- *   timer_t0_set() restores fixed-rate (30 Hz) mode.
+ *   timer_t0_set() restores fixed-rate mode.
  */
 void timer_period_set(uint32_t ticks);
 void timer_t0_tick_elapsed(uint32_t ticks);

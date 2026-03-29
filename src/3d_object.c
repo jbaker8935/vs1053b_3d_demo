@@ -207,6 +207,98 @@ const Model3D g_model_anaconda = {
 };
 
 
+/* truncated octahedron — canonical (0, ±1, ±2) permutation set, scaled ×48.
+ * 24 vertices, 36 edges, 14 faces (6 squares + 8 hexagons).
+ */
+
+#define TO_SCALE 5
+
+static const int16_t to_vx[24] = {
+    -96 * TO_SCALE, -96 * TO_SCALE, -96 * TO_SCALE, -96 * TO_SCALE,  -48 * TO_SCALE, -48 * TO_SCALE, -48 * TO_SCALE, -48 * TO_SCALE,
+      0,   0,   0,   0,    0,   0,   0,   0,
+     48 * TO_SCALE,  48 * TO_SCALE,  48 * TO_SCALE,  48 * TO_SCALE,   96 * TO_SCALE,  96 * TO_SCALE,  96 * TO_SCALE,  96 * TO_SCALE
+};
+static const int16_t to_vy[24] = {
+    -48 * TO_SCALE,   0,   0,  48 * TO_SCALE,  -96 * TO_SCALE,   0,   0,  96 * TO_SCALE,
+    -96 * TO_SCALE, -96 * TO_SCALE, -48 * TO_SCALE, -48 * TO_SCALE,   48 * TO_SCALE,  48 * TO_SCALE,  96 * TO_SCALE,  96 * TO_SCALE,
+    -96 * TO_SCALE,   0,   0,  96 * TO_SCALE,  -48 * TO_SCALE,   0,   0,  48 * TO_SCALE
+};
+static const int16_t to_vz[24] = {
+      0, -48 * TO_SCALE,  48 * TO_SCALE,   0,    0, -96 * TO_SCALE,  96 * TO_SCALE,   0,
+    -48 * TO_SCALE,  48 * TO_SCALE, -96 * TO_SCALE,  96 * TO_SCALE,  -96 * TO_SCALE,  96 * TO_SCALE, -48 * TO_SCALE,  48 * TO_SCALE,
+      0, -96 * TO_SCALE,  96 * TO_SCALE,   0,    0, -48 * TO_SCALE,  48 * TO_SCALE,   0
+};
+
+/* 36 edges: every adjacent vertex pair at distance √2 in raw unit coords */
+static const uint8_t to_edge_a[36] = {
+     0,  0,  0,  1,  1,  2,  2,  3,  4,  4,
+     5,  5,  6,  6,  7,  7,  8,  8,  9,  9,
+    10, 11, 12, 12, 13, 13, 14, 15, 16, 17,
+    18, 19, 20, 20, 21, 22
+};
+static const uint8_t to_edge_b[36] = {
+     1,  2,  4,  3,  5,  3,  6,  7,  8,  9,
+    10, 12, 11, 13, 14, 15, 10, 16, 11, 16,
+    17, 18, 14, 17, 15, 18, 19, 19, 20, 21,
+    22, 23, 21, 22, 23, 23
+};
+
+/* 14 face normals in Q14 object space.
+ * Faces 0-5: square faces (axis-aligned), faces 6-13: hexagonal faces. */
+static const int16_t to_face_nx[14] = {
+    -16384,  16384,      0,      0,      0,      0,
+     -9459,  -9459,  -9459,  -9459,   9459,   9459,   9459,   9459
+};
+static const int16_t to_face_ny[14] = {
+         0,      0, -16384,  16384,      0,      0,
+     -9459,  -9459,   9459,   9459,  -9459,  -9459,   9459,   9459
+};
+static const int16_t to_face_nz[14] = {
+         0,      0,      0,      0, -16384,  16384,
+     -9459,   9459,  -9459,   9459,  -9459,   9459,  -9459,   9459
+};
+
+/* Per-edge adjacent face indices (derived from face membership of each vertex) */
+static const uint8_t to_edge_face0[36] = {
+     0,  0,  6,  0,  6,  0,  7,  8,  2,  2,
+     4,  4,  5,  5,  3,  3,  6,  2,  7,  2,
+     4,  5,  8,  4,  9,  5,  3,  3, 10, 10,
+    11, 12,  1,  1,  1,  1
+};
+static const uint8_t to_edge_face1[36] = {
+     6,  7,  7,  8,  8,  9,  9,  9,  6,  7,
+     6,  8,  7,  9,  8,  9, 10, 10, 11, 11,
+    10, 11, 12, 12, 13, 13, 12, 13, 11, 12,
+    13, 13, 10, 11, 12, 13
+};
+
+const Model3D g_model_truncated_octahedron = {
+    .vertex_count = 24,
+    .edge_count   = 36,
+    .center_x = 0,
+    .center_y = 0,
+    .center_z = 0,
+    .radius   = 108,  // ceil(sqrt(96²+48²)) = ceil(107.3)
+
+    .object_color = 0x0D0B,
+
+    .vx = to_vx,
+    .vy = to_vy,
+    .vz = to_vz,
+
+    .edge_a = to_edge_a,
+    .edge_b = to_edge_b,
+
+    .face_count = 14,
+    .face_nx = to_face_nx,
+    .face_ny = to_face_ny,
+    .face_nz = to_face_nz,
+
+    .edge_face0 = to_edge_face0,
+    .edge_face1 = to_edge_face1
+};
+
+
 void camera_init(Camera *cam, vec3_t pos) {
     cam->position = pos;
     cam->yaw = 0;

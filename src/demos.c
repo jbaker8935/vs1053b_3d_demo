@@ -433,13 +433,120 @@ static const Demo demo5 = {
 };
 
 // =============================================================================
+// Demo 6 — Boing! (Truncated Octahedron Gravity Bounce)
+// Inspired by the Amiga Boing Ball demo.  A truncated octahedron falls under
+// simulated gravity, bouncing elastically off the screen floor and side walls.
+// Yaw rotation reverses direction on every bounce.
+// =============================================================================
+
+/* World-space bounce parameters (object fixed at BOING_Z, camera at z=1400)  *
+ * At z=400 (view_z=1000) the projection scale is 160/1000 = 0.16 px/unit:    *
+ *   screen_x = 160 + pos_x * 0.16   → ±700 ≈ screen left/right              *
+ *   screen_y = 120 - (pos_y-200)*0.16 → Y=300 ≈ top,  Y=-300 ≈ bottom        */
+#define BOING_Z          100    /* fixed depth — close to camera for large object */
+#define BOING_START_Y    300    /* initial world Y (near screen top)              */
+#define BOING_FLOOR_Y  (-300)   /* floor — near screen bottom                     */
+#define BOING_WALL_X     700    /* left/right walls (±)                           */
+#define BOING_GRAVITY      2    /* world-units/frame² downward acceleration       */
+#define BOING_VX_INIT      8    /* initial horizontal speed (world-units/f)       */
+#define BOING_YAW_RATE     4    /* yaw increment per frame (uint8 wrap)           */
+
+static int16_t g_boing_pos_x;
+static int16_t g_boing_pos_y;
+static int16_t g_boing_vel_x;
+static int16_t g_boing_vel_y;
+static int8_t  g_boing_yaw_dir;   /* +1 = forward, -1 = reverse */
+
+static const SceneObjectParams demo6_init[] = {
+    { .slot=2, .yaw=0, .pitch=16, .roll=0, .scale=128,
+      .pos_x=0, .pos_y=BOING_START_Y, .pos_z=BOING_Z }
+};
+
+static const Model3D * const demo6_models[] = { &g_model_truncated_octahedron };
+
+static void demo6_enter(void) {
+    reset_camera();
+    vgk_model_slot_init(&g_model_truncated_octahedron, 2);
+    vgk_hidden_line_enable();
+    vgk_no_near_far_coloring = true;
+    g_boing_pos_x   =  0;
+    g_boing_pos_y   =  BOING_START_Y;
+    g_boing_vel_x   =  BOING_VX_INIT;
+    g_boing_vel_y   =  0;
+    g_boing_yaw_dir =  1;
+}
+
+static void demo6_exit(void) {
+    vgk_hidden_line_disable();
+    vgk_no_near_far_coloring = false;
+}
+
+static void demo6_static(void) {
+    /* initial static pose — on_enter already positioned the object */
+}
+
+static void demo6_bounce(void) {
+    /* apply gravity and integrate position */
+    g_boing_vel_y = (int16_t)(g_boing_vel_y - BOING_GRAVITY);
+    g_boing_pos_y = (int16_t)(g_boing_pos_y + g_boing_vel_y);
+    g_boing_pos_x = (int16_t)(g_boing_pos_x + g_boing_vel_x);
+
+    /* floor bounce — elastic reflection, reverse yaw */
+    if (g_boing_pos_y < BOING_FLOOR_Y) {
+        g_boing_pos_y   = BOING_FLOOR_Y;
+        g_boing_vel_y   = (int16_t)(-g_boing_vel_y);
+        g_boing_yaw_dir = (int8_t)(-g_boing_yaw_dir);
+    }
+
+    /* side-wall bounces — elastic reflection, reverse yaw */
+    if (g_boing_pos_x > BOING_WALL_X) {
+        g_boing_pos_x   =  BOING_WALL_X;
+        g_boing_vel_x   = (int16_t)(-g_boing_vel_x);
+        g_boing_yaw_dir = (int8_t)(-g_boing_yaw_dir);
+    } else if (g_boing_pos_x < -BOING_WALL_X) {
+        g_boing_pos_x   = -BOING_WALL_X;
+        g_boing_vel_x   = (int16_t)(-g_boing_vel_x);
+        g_boing_yaw_dir = (int8_t)(-g_boing_yaw_dir);
+    }
+
+    /* push updated position to the instance */
+    g_demo_instances[0].pos_x = g_boing_pos_x;
+    g_demo_instances[0].pos_y = g_boing_pos_y;
+
+    /* advance yaw in the current direction (uint8_t wraps naturally) */
+    uint8_t yaw_step = (g_boing_yaw_dir > 0)
+                           ? (uint8_t)BOING_YAW_RATE
+                           : (uint8_t)(256u - BOING_YAW_RATE);
+    g_demo_instances[0].yaw = (uint8_t)(g_demo_instances[0].yaw + yaw_step);
+}
+
+static const DemoEvent demo6_events[] = {
+    { "Boing!",  2,  DEMO_EVENT_ONESHOT,  demo6_static  },
+    { "Boing!",  25, DEMO_EVENT_PERFRAME, demo6_bounce  },
+};
+
+static const Demo demo6 = {
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Boing!" },
+    .event_count     = 2,
+    .events          = demo6_events,
+    .instance_count  = 1,
+    .initial_instances = demo6_init,
+    .initial_models  = demo6_models,
+    .near_color      = 0x0B,
+    .far_color       = 0x0D,
+    .use_scene_api   = false,
+    .on_enter        = demo6_enter,
+    .on_exit         = demo6_exit,
+};
+
+// =============================================================================
 // Demo registry
 // =============================================================================
 
 static const Demo * const g_all_demos[] = {
-    &demo1, &demo2, &demo3, &demo4, &demo5
+   &demo1, &demo2, &demo3, &demo4, &demo5, &demo6 
 };
-#define DEMO_COUNT 5u
+#define DEMO_COUNT 6u
 
 void demos_register(void) {
     demo_engine_init(g_all_demos, DEMO_COUNT);
