@@ -5,8 +5,7 @@
 
 static InputState g_input __attribute__((section(".bss")));
 
-bool paused = false;
-bool hiddenLineEnabled = false;
+bool swapStereo = true;
 
 InputState *input_state_data(void) {
 return &g_input;
@@ -14,8 +13,7 @@ return &g_input;
 
 void input_state_init(void) {
 memset(&g_input, 0, sizeof(g_input));
-paused = false;
-hiddenLineEnabled = false;
+swapStereo = true;
 }
 
 void input_state_clear_hold(InputState *state) {
@@ -37,6 +35,6 @@ state->edge.rotateRight = false;
 state->edge.rotateUp = false;
 state->edge.rotateDown = false;
 state->edge.resetCam = false;
-state->edge.pause = false;
 state->edge.exit = false;
+state->edge.swapStereo = false;
 }

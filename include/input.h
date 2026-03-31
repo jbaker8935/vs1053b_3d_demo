@@ -19,7 +19,7 @@ bool rotateUp;
 bool rotateDown;
 bool resetCam;
 bool exit;
-bool pause;
+bool swapStereo; /* Toggle L/R channel output */
 } InputEdge;
 
 typedef struct {
@@ -32,7 +32,6 @@ void input_state_init(void);
 void input_state_clear_edges(InputState *state);
 void input_state_clear_hold(InputState *state);
 
-extern bool paused;
-extern bool hiddenLineEnabled;
+extern bool swapStereo; /* global state for whether stereo channels are swapped */
 
 #endif // INPUT_H

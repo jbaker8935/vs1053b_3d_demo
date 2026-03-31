@@ -10,16 +10,13 @@
 
 #include "f256lib.h"
 
-
+#include "../include/opl3_io.h"
 #include "../include/timer.h"
 #include "../include/vgm.h"
 
-/* -----------------------------------------------------------------------
- * OPL3 (YMF262) hardware registers -- F256 memory-mapped I/O
- * ----------------------------------------------------------------------- */
-#define OPL_ADDR_L  0xD580u  /* port-0 address register (regs 0x000-0x0FF) */
-#define OPL_DATA    0xD581u  /* shared data register                        */
-#define OPL_ADDR_H  0xD582u  /* port-1 address register (regs 0x100-0x1FF) */
+/* ---- Diagnostic: suppress all VGM OPL writes so only FX reaches hardware.
+ * Remove or comment out this define to restore normal VGM playback. ---- */
+// #define VGM_SUPPRESS_OPL
 
 /* -----------------------------------------------------------------------
  * Global VGM player state
@@ -41,6 +38,7 @@ static vgm_seek_fn vgm_seek_fn_ptr;
 static void *vgm_io_ctx;
 static uint8_t vgm_buf[VGM_BUF_SIZE];
 
+
 /* -----------------------------------------------------------------------
  * VGM timing
  *
@@ -49,7 +47,7 @@ static uint8_t vgm_buf[VGM_BUF_SIZE];
  * we use 571.  The tiny per-sample rounding (~0.024 %) accumulates to about
  * ~14.5 ms per minute of playback -- imperceptible on real audio.
  * ----------------------------------------------------------------------- */
-#define VGM_TICKS_PER_SAMPLE 571u
+/* VGM_TICKS_PER_SAMPLE is defined in include/vgm.h (shared with vgm_fx.c) */
 
 /* Maximum value that fits in T0's 24-bit compare register */
 #define T0_MAX_TICKS 0x00FFFFFFu
@@ -64,22 +62,8 @@ static uint8_t vgm_buf[VGM_BUF_SIZE];
 #define TICKS_200HZ     ((uint32_t)220u * VGM_TICKS_PER_SAMPLE)  /* 0x1EAF4 */
 
 /* -----------------------------------------------------------------------
- * OPL3 helpers
+ * OPL3 helpers (register write primitives defined in opl3_io.h)
  * ----------------------------------------------------------------------- */
-
-/* Write one OPL3 register on port 0. */
-static void opl_write_port0(uint8_t reg, uint8_t val)
-{
-    POKE(OPL_ADDR_L, reg);
-    POKE(OPL_DATA, val);
-}
-
-/* Write one OPL3 register on port 1. */
-static void opl_write_port1(uint8_t reg, uint8_t val)
-{
-    POKE(OPL_ADDR_H, reg);
-    POKE(OPL_DATA, val);
-}
 
 /* Busy-wait for exactly `ticks` dot-clock ticks using the free-running T0
  * counter.  Only called for micro-waits (≤ VGM_MIN_MICRO_WAIT_TICKS) during
@@ -252,22 +236,6 @@ static const uint32_t short_wait_ticks[17u] = {
  * Must be >= YMF262 T4 minimum (~506 dot-clock ticks); 1024 gives 2x margin. */
 #define VGM_CATCHUP_TICKS 1024u
 
-/* Maximum catch-up rate expressed as a divisor of the nominal wait period.
- * During debt drain each VGM tick is compressed to at most
- * 1/VGM_CATCHUP_DIVISOR of its nominal duration, never below VGM_CATCHUP_TICKS.
- *
- * furnace_bgm.vgm creates stereo depth by triggering the same note on an
- * R-only channel one or two 441-sample (10 ms) ticks before the matching
- * L-only channel note.  Compressing those ticks to VGM_CATCHUP_TICKS (40 µs)
- * collapses the delay to <100 µs -- inaudible.  With divisor=10 each 10 ms
- * tick takes at least 1 ms even during heavy catch-up, so a 2-tick stereo
- * delay remains ~2 ms -- clearly perceivable. */
-#define VGM_CATCHUP_DIVISOR 10u
-
-/* Define to 1 to enable catch-up proportional compression (default behavior)
- * Define to 0 to disable proportional timing compression and drain waits in
- * nominal duration instead. */
-#define VGM_CATCHUP_COMPRESSION 0
 
 /* Micro-waits at or below this threshold are honoured in full (by busy-wait)
  * even during catch-up.  Waits this short separate OPL3 port-0 / port-1 write
@@ -416,6 +384,7 @@ vgm_status_t vgm_open(vgm_read_fn read_fn, vgm_seek_fn seek_fn,
     vgm_loop_offset    = 0u;
     vgm_data_start     = 0u;
     vgm_stream_pos     = 0u;
+    /* Channel shadows removed; hardware initialisation already sets C0=0x30. */
     vgm_read_fn_ptr    = read_fn;
     vgm_seek_fn_ptr    = seek_fn;
     vgm_io_ctx         = io_ctx;
@@ -536,6 +505,26 @@ vgm_status_t vgm_service(void)
         return VGM_DONE;
     }
 
+    /* ----- Paused: keep T0 firing for FX ticking but freeze the stream ----- */
+    if (__builtin_expect((vgm_flags & VGM_FLAG_PAUSED) != 0u, 0)) {
+        if (vgm_flags & VGM_FLAG_TIMER_RUN) {
+            if (!timer_t0_is_done()) {
+                return VGM_WAITING;
+            }
+            /* T0 fired while paused: tick FX then re-arm at the same period
+             * so the FX wait counter keeps draining.  Clear COMPENSATE so
+             * no overrun debt accumulates against the frozen stream position. */
+            timer_t0_tick_elapsed(vgm_last_period);
+            vgm_flags &= (uint8_t)~(VGM_FLAG_TIMER_RUN | VGM_FLAG_COMPENSATE);
+            schedule_wait_arm(vgm_last_period > 0u ? vgm_last_period
+                                                    : TICKS_ONE_NTSC);
+        } else {
+            /* No timer running (paused during dispatch): arm one so FX ticks */
+            schedule_wait_arm(TICKS_ONE_NTSC);
+        }
+        return VGM_WAITING;
+    }
+
     /* ----- Timer / wait handling ----- */
     if (vgm_flags & VGM_FLAG_TIMER_RUN) {
         if (!timer_t0_is_done()) {
@@ -588,13 +577,22 @@ vgm_status_t vgm_service(void)
         case 0x5Eu:  /* YMF262 port 0 register write */
             reg = buf_get();
             val = buf_get();
+            /* DIAG: suppress all VGM OPL writes; only FX writes reach hardware */
+#ifndef VGM_SUPPRESS_OPL
             opl_write_port0(reg, val);
+#else
+            (void)reg; (void)val;
+#endif
             break;
 
         case 0x5Fu:  /* YMF262 port 1 register write */
             reg = buf_get();
             val = buf_get();
+#ifndef VGM_SUPPRESS_OPL
             opl_write_port1(reg, val);
+#else
+            (void)reg; (void)val;
+#endif
             break;
 
         /* ---- Wait commands ---- */
@@ -751,3 +749,53 @@ void vgm_close(void)
     /* Restore T0 to fixed-rate 24 Hz mode so general alarms resume normally */
     timer_t0_set();
 }
+
+/* ----------------------------------------------------------------------- * vgm_opl_init -- public wrapper for chip-level OPL3 initialisation.
+ * Enables waveform-select, OPL3 mode, L+R output on all channels, and
+ * keys off every channel.  Call once from main() when no VGM stream is
+ * used so the chip is ready for FX-only playback.
+ * ----------------------------------------------------------------------- */
+void vgm_opl_init(void)
+{
+    opl_init(3u);   /* always enable OPL3 mode for FX */
+}
+
+/* -----------------------------------------------------------------------
+ * vgm_open_mem -- play a VGM byte array stored in RAM.
+ * ----------------------------------------------------------------------- */
+
+typedef struct {
+    const uint8_t *data;
+    uint32_t       len;
+    uint32_t       pos;
+} vgm_mem_ctx_t;
+
+static vgm_mem_ctx_t s_vgm_mem_ctx;
+
+static uint16_t vgm_mem_read(void *ctx, uint8_t *buf, uint16_t n)
+{
+    vgm_mem_ctx_t *m = (vgm_mem_ctx_t *)ctx;
+    uint32_t avail = (m->pos < m->len) ? (m->len - m->pos) : 0u;
+    if ((uint32_t)n > avail) { n = (uint16_t)avail; }
+    if (n > 0u) {
+        uint16_t i;
+        for (i = 0u; i < n; ++i) { buf[i] = m->data[m->pos + i]; }
+        m->pos += (uint32_t)n;
+    }
+    return n;
+}
+
+static void vgm_mem_seek(void *ctx, uint32_t offset)
+{
+    vgm_mem_ctx_t *m = (vgm_mem_ctx_t *)ctx;
+    m->pos = (offset < m->len) ? offset : m->len;
+}
+
+vgm_status_t vgm_open_mem(const uint8_t *data, uint32_t len)
+{
+    s_vgm_mem_ctx.data = data;
+    s_vgm_mem_ctx.len  = len;
+    s_vgm_mem_ctx.pos  = 0u;
+    return vgm_open(vgm_mem_read, vgm_mem_seek, &s_vgm_mem_ctx);
+}
+

@@ -63,13 +63,7 @@ int16_t fwd_z = (int16_t)(-(tmp_fz >> 14));
 int16_t right_x = cy;
 int16_t right_z = -sy;
 
-if (input->edge.resetCam) {
-reset_camera();
-return;
-}
-if (input->edge.pause) {
-    // pause handled by demo engine idle logic
-}
+
 
 if (input->hold.w) {
 int16_t dx = (int16_t)(mathSignedMultiply(fwd_x, speed) >> 14);

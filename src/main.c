@@ -11,6 +11,7 @@
 #include "../include/timer.h"
 #include "../include/demo.h"
 #include "../include/demos.h"
+#include "../include/vgm_assets.h"
 #include "../include/vgm_himem.h"
 #include "../include/vgm.h"
 #include "../include/codec.h"
@@ -29,14 +30,42 @@ extern void vgk_plugin_init(void);
 #define VGM_HIMEM_BASE    0x080000UL
 
 static vgm_himem_ctx_t g_vgm_himem;
-static bool            g_vgm_open = false;
+static vgm_himem_ctx_t g_vgm_fx_himem;
+static bool            g_vgm_open  = false;
+static bool            g_vgm_is_fx = false;  /* true while a one-shot FX stream is playing */
 static const char     *g_vgm_path = NULL;
 
-/* Re-arm the player from the beginning of the cached stream. */
-static void start_vgm_playback(void) {
+/* Re-arm the player from the beginning of the cached stream.
+ * Non-static: called from demos.c to restart after demo6 completes. */
+void start_vgm_playback(void) {
     g_vgm_himem.pos = 0u;  /* reset so vgm_open() reads header from pos 0 */
     g_vgm_open = (vgm_open(vgm_himem_read, vgm_himem_seek,
                            &g_vgm_himem) == VGM_PLAYING);
+}
+
+/* Stop playback and prevent process_vgm_tick() from restarting the stream.
+ * Non-static: called from demos.c when demo6 enters. */
+void stop_vgm_playback(void) {
+    if (g_vgm_open) {
+        vgm_close();
+        g_vgm_open  = false;
+        g_vgm_is_fx = false;
+    }
+}
+
+/* Play a one-shot FX VGM stream from a himem-embedded byte array.
+ * Preempts any currently-playing stream (BGM or FX).
+ * Non-static: called from demos.c via extern declaration. */
+void start_vgm_fx_himem(uint32_t himem_addr, uint32_t len) {
+    if (g_vgm_open) {
+        vgm_close();
+    }
+    g_vgm_fx_himem.base = himem_addr;
+    g_vgm_fx_himem.size = len;
+    g_vgm_fx_himem.pos  = 0u;
+    g_vgm_is_fx = true;
+    g_vgm_open  = (vgm_open(vgm_himem_read, vgm_himem_seek,
+                            &g_vgm_fx_himem) == VGM_PLAYING);
 }
 
 /* Load VGM into high memory (one-time SD read), then start playback.
@@ -46,14 +75,24 @@ static void initialize_vgm_playback(const char *path) {
     start_vgm_playback();
 }
 
-/* Service one VGM step; loop automatically on end-of-stream. */
+/* Service one VGM step; loop automatically on end-of-stream.
+ * FX streams play once and stop; BGM streams loop. */
 static void process_vgm_tick(void) {
-    if (!g_vgm_open) return;
+    if (!g_vgm_open) {
+        return;
+    }
     vgm_status_t s = vgm_service();
 
     if (s == VGM_DONE) {
-        vgm_close();  /* silence chip, restore fixed-rate T0 */
-        start_vgm_playback();               /* loop: re-open from cached stream      */
+        vgm_close();
+        g_vgm_open = false;
+        if (g_vgm_is_fx) {
+            /* One-shot FX finished — don't restart */
+            g_vgm_is_fx = false;
+        } else {
+            /* BGM finished — loop from the beginning */
+            start_vgm_playback();
+        }
     } else if (s == VGM_ERROR) {
         vgm_close();
         g_vgm_open = false;
@@ -85,19 +124,28 @@ int main(int argc, char *argv[]) {
 
     init_models();
     codec_init();
+    codec_channel_stereo_swap(swapStereo);
+    /* Initialise the OPL3 chip unconditionally so FX playback works even
+     * when no VGM background-music file is provided. */
+    vgm_opl_init();
     if (g_vgm_path != NULL) {
       initialize_vgm_playback(g_vgm_path); /* start VGM after VS1053B is fully set up */
       if (!g_vgm_open) {
         textPrint("Failed to load VGM file (");
         textPrint(g_vgm_path);
         textPrint("); continuing without audio.");
-        timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 120); /* two second exit wait */
+        timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 2*T0_TICK_FREQ); /* two second exit wait */
         while (true) {
           if (timer_t0_alarm_check(TIMER_ALARM_GENERAL0)) {
             break;
           }
         }
       }
+    } else {
+      /* No command-line VGM — use the embedded water.vgm from fixed himem address */
+      g_vgm_himem.base = WATER_VGM_ADDR;
+      g_vgm_himem.size = WATER_VGM_LEN;
+      start_vgm_playback();
     }
 
     vgk_yield_cb_set(process_vgm_tick);  /* service audio during DSP waits */
@@ -111,7 +159,17 @@ int main(int argc, char *argv[]) {
         InputState *input = input_state_data();
         if (input->edge.exit) {
             break;
-        }        
+        }    
+        
+        if (input->edge.resetCam) {
+            reset_camera();
+        }
+
+        if(input->edge.swapStereo) {
+            swapStereo = !swapStereo;
+            codec_channel_stereo_swap(swapStereo);
+        }   
+             
         if (!demo_engine_update(input)) {
             break;
         }
@@ -125,9 +183,9 @@ int main(int argc, char *argv[]) {
         timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 1);
     }
 
-    if (g_vgm_open) {
-        vgm_close();
-    }
+    // always close VGM on exit.
+    vgm_close();
+
     timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 1);  /* 1/T0_TICK_FREQ exit wait */
     while(true) {
         if (timer_t0_alarm_check(TIMER_ALARM_GENERAL0)) {

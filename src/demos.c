@@ -9,6 +9,11 @@
 #include "../include/3d_object.h"
 #include "../include/geometry_kernel.h"
 #include "../include/game_state.h"
+#include "../include/vgm.h"
+extern void start_vgm_playback(void);  /* defined in main.c */
+extern void stop_vgm_playback(void);   /* defined in main.c */
+extern void start_vgm_fx_himem(uint32_t himem_addr, uint32_t len); /* defined in main.c */
+#include "../include/vgm_assets.h"
 
 
 // =============================================================================
@@ -76,7 +81,7 @@ static const DemoEvent demo1_events[] = {
 };
 
 static const Demo demo1 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Simple Cube Primitive" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Simple Cube Primitive" },
     .event_count     = 5,
     .events          = demo1_events,
     .instance_count  = 1,
@@ -136,7 +141,7 @@ static const DemoEvent demo2_events[] = {
 };
 
 static const Demo demo2 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Multiple Objects" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Multiple Objects" },
     .event_count     = 2,
     .events          = demo2_events,
     .instance_count  = 4,
@@ -253,7 +258,7 @@ static const DemoEvent demo3_events[] = {
 };
 
 static const Demo demo3 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Anaconda Flyby" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Anaconda Flyby" },
     .event_count     = 4,
     .events          = demo3_events,
     .instance_count  = 4,
@@ -335,7 +340,7 @@ static const DemoEvent demo4_events[] = {
 };
 
 static const Demo demo4 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Anaconda Color Cycling" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Anaconda Color Cycling" },
     .event_count     = 2,
     .events          = demo4_events,
     .instance_count  = 3,
@@ -419,7 +424,7 @@ static const DemoEvent demo5_events[] = {
 };
 
 static const Demo demo5 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Scene with Occlusion" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Scene with Occlusion" },
     .event_count     = 5,
     .events          = demo5_events,
     .instance_count  = 4,
@@ -458,11 +463,13 @@ static int16_t g_boing_vel_y;
 static int8_t  g_boing_yaw_dir;   /* +1 = forward, -1 = reverse */
 
 static const SceneObjectParams demo6_init[] = {
-    { .slot=2, .yaw=0, .pitch=16, .roll=0, .scale=128,
+    { .slot=2, .yaw=16,  .pitch=16, .roll=0, .scale=128,
       .pos_x=0, .pos_y=BOING_START_Y, .pos_z=BOING_Z }
 };
 
-static const Model3D * const demo6_models[] = { &g_model_truncated_octahedron };
+static const Model3D * const demo6_models[] = {
+    &g_model_truncated_octahedron
+};
 
 static void demo6_enter(void) {
     reset_camera();
@@ -474,9 +481,12 @@ static void demo6_enter(void) {
     g_boing_vel_x   =  BOING_VX_INIT;
     g_boing_vel_y   =  0;
     g_boing_yaw_dir =  1;
+    stop_vgm_playback();  /* stop BGM completely; only FX audio plays during this demo */
 }
 
 static void demo6_exit(void) {
+    vgm_close();            /* silence any in-progress kick FX before leaving */
+    start_vgm_playback();  /* restart BGM from the beginning */
     vgk_hidden_line_disable();
     vgk_no_near_far_coloring = false;
 }
@@ -491,22 +501,25 @@ static void demo6_bounce(void) {
     g_boing_pos_y = (int16_t)(g_boing_pos_y + g_boing_vel_y);
     g_boing_pos_x = (int16_t)(g_boing_pos_x + g_boing_vel_x);
 
-    /* floor bounce — elastic reflection, reverse yaw */
+    /* floor bounce — centre kick */
     if (g_boing_pos_y < BOING_FLOOR_Y) {
         g_boing_pos_y   = BOING_FLOOR_Y;
         g_boing_vel_y   = (int16_t)(-g_boing_vel_y);
         g_boing_yaw_dir = (int8_t)(-g_boing_yaw_dir);
+        start_vgm_fx_himem(KICK_CENTER_ADDR, KICK_CENTER_LEN);
     }
 
-    /* side-wall bounces — elastic reflection, reverse yaw */
+    /* side-wall bounces — directional kick */
     if (g_boing_pos_x > BOING_WALL_X) {
         g_boing_pos_x   =  BOING_WALL_X;
         g_boing_vel_x   = (int16_t)(-g_boing_vel_x);
         g_boing_yaw_dir = (int8_t)(-g_boing_yaw_dir);
+        start_vgm_fx_himem(KICK_RIGHT_ADDR, KICK_RIGHT_LEN);
     } else if (g_boing_pos_x < -BOING_WALL_X) {
         g_boing_pos_x   = -BOING_WALL_X;
         g_boing_vel_x   = (int16_t)(-g_boing_vel_x);
         g_boing_yaw_dir = (int8_t)(-g_boing_yaw_dir);
+        start_vgm_fx_himem(KICK_LEFT_ADDR, KICK_LEFT_LEN);
     }
 
     /* push updated position to the instance */
@@ -522,11 +535,11 @@ static void demo6_bounce(void) {
 
 static const DemoEvent demo6_events[] = {
     { "Boing!",  2,  DEMO_EVENT_ONESHOT,  demo6_static  },
-    { "Boing!",  25, DEMO_EVENT_PERFRAME, demo6_bounce  },
+    { "Boing!",  30, DEMO_EVENT_PERFRAME, demo6_bounce  },
 };
 
 static const Demo demo6 = {
-    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTG QE RF Exit: X", "Boing!" },
+    .title           = { "VS1053b Geometry Kernel Demo", "Camera Control:WASDTGC QE RF Exit: X", "Boing!" },
     .event_count     = 2,
     .events          = demo6_events,
     .instance_count  = 1,
@@ -544,7 +557,7 @@ static const Demo demo6 = {
 // =============================================================================
 
 static const Demo * const g_all_demos[] = {
-   &demo1, &demo2, &demo3, &demo4, &demo5, &demo6 
+   &demo6, &demo1, &demo2, &demo3, &demo4, &demo5
 };
 #define DEMO_COUNT 6u
 

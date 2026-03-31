@@ -11,6 +11,16 @@ void codec_write(uint16_t reg, uint16_t val) {
         ;
 }
 
+void codec_channel_stereo_swap(bool swap) {
+    uint16_t chl_ctl = PEEK(CODEC_DAC_CHL_CTL);
+    if (swap) {
+        chl_ctl = (chl_ctl & CODEC_DAC_CHL_CTL_OUT_MASK) | CODEC_DAC_CHL_CTL_SWAP;
+    } else {
+        chl_ctl = (chl_ctl & CODEC_DAC_CHL_CTL_OUT_MASK) | CODEC_DAC_CHL_CTL_STEREO;
+    }
+    codec_write(CODEC_DAC_CHL_CTL, chl_ctl);
+}
+
 /*  Codec Setup */
 void codec_init(void) {
     codec_write(CODEC_ADC_MUX, CODEC_AIN2);

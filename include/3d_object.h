@@ -87,6 +87,7 @@ extern const Model3D g_model_starfield;
 extern const Model3D g_model_cube;
 extern const Model3D g_model_anaconda;
 extern const Model3D g_model_truncated_octahedron;
+extern const Model3D g_model_bbox_cuboid;
 
 typedef struct {
     vec3_t position;

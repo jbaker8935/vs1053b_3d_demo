@@ -24,7 +24,7 @@ state->hold.rotateDown = pressed;
 if (pressed) state->edge.rotateDown = true;
 break;
 case 'x': case 'X': if (pressed) state->edge.exit = true; break;
-case 'p': case 'P': if (pressed) state->edge.pause = true; break;
+case '-': case '_': if (pressed) state->edge.swapStereo = true; break;
 case 'c': case 'C':
 if (pressed) state->edge.resetCam = true;
 break;

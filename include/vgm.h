@@ -35,12 +35,18 @@
 /* Streaming buffer size.  */
 #define VGM_BUF_SIZE 255u /* to fit within 8-bit index.  MUST be 96 or larger */
 
+/* Dot-clock ticks per VGM 44100 Hz sample: 25,175,000 / 44,100 = 570.86 → 571.
+ * Shared here so vgm_fx.c can convert FX wait sample counts to T0 ticks
+ * using the same constant as the main player. */
+#define VGM_TICKS_PER_SAMPLE 571u
+
 /* Internal flags bits stored in the player's internal flags */
 #define VGM_FLAG_LOOPED          0x01u  /* loop point has been passed once */
 #define VGM_FLAG_TIMER_RUN       0x02u  /* T0 is counting a VGM wait period */
 #define VGM_FLAG_DONE            0x04u  /* playback complete */
 #define VGM_FLAG_COMPENSATE      0x08u  /* next schedule_wait() should subtract
                                          * T0 overrun from the programmed period */
+#define VGM_FLAG_PAUSED          0x10u  /* stream frozen; only FX ticks advance */
 
 typedef enum {
     VGM_PLAYING = 0,  /* actively dispatching commands */
@@ -86,6 +92,16 @@ vgm_status_t vgm_open(vgm_read_fn read_fn, vgm_seek_fn seek_fn,
                        void *io_ctx);
 
 /*
+ * vgm_open_mem(data, len)
+ *   Convenience wrapper around vgm_open() that plays a VGM byte array
+ *   stored in RAM.  The array must remain valid for the lifetime of the
+ *   playback session (i.e. until vgm_close() is called).
+ *
+ *   Returns VGM_PLAYING on success, VGM_ERROR on failure.
+ */
+vgm_status_t vgm_open_mem(const uint8_t *data, uint32_t len);
+
+/*
  * vgm_service()
  *   Advance playback.  Must be called repeatedly from the main loop.
  *
@@ -107,5 +123,20 @@ vgm_status_t vgm_service(void);
  *   that via io_ctx after this function returns.
  */
 void vgm_close(void);
+
+/*
+ * vgm_opl_init()
+ *   Perform the minimal OPL3 chip-level initialisation that vgm_open()
+ *   would normally do: enable waveform-select, enable OPL3 mode, disable
+ *   percussion mode, enable L+R output on all 18 channels, and key-off
+ *   every channel.
+ *
+ *   Call this from main() before any FX playback when no VGM stream will
+ *   be opened, so the OPL3 chip is in a known good state regardless of
+ *   whether background music is active.
+ *   It is safe (and harmless) to call this even when vgm_open() will also
+ *   be called; vgm_open() calls the same init internally.
+ */
+void vgm_opl_init(void);
 
 #endif /* INCLUDE_VGM_H__ */

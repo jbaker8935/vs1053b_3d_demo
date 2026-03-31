@@ -50,11 +50,14 @@
 #define CODEC_HPO_ATTN_12DB (0x0179 - 12)
 
 /* Channel control */
+#define CODEC_DAC_CHL_CTL_OUT_MASK 0x0F /* Mask off for output control bits*/
 #define CODEC_DAC_CHL_CTL_STEREO 0x90
+#define CODEC_DAC_CHL_CTL_SWAP 0x60
 #define CODEC_DAC_CHL_CTL_MONO 0xF0
 
 /* Public API */
 void codec_write(uint16_t reg, uint16_t val);
 void codec_init(void);
+void codec_channel_stereo_swap(bool swap);
 
 #endif /* CODEC_H */

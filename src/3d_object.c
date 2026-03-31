@@ -299,6 +299,44 @@ const Model3D g_model_truncated_octahedron = {
 };
 
 
+/* Arena bounding box for demo6 bounce.
+ * Cuboid: 2400 (X) × 1600 (Y) × 1000 (Z), centred at (0, 0, BOING_Z).
+ * face_count = 0 → no hidden-line processing applied to this object.
+ *
+ * Dimensions derived from bounce physics:
+ *   X half-extent 1200: wall ±700 + object half-extent 480 + margin
+ *   Y half-extent  800: floor/ceiling ±300 + object half-extent 480 + margin
+ *   Z half-extent  500: object local z extent 480 + margin
+ * Vertex layout mirrors g_model_cube (X changes every 4, Y every 2, Z alternates). */
+static const int16_t g_bbox_vx[8] = { -1200, -1200, -1200, -1200, 1200, 1200, 1200, 1200 };
+static const int16_t g_bbox_vy[8] = {  -800,  -800,   800,   800, -800, -800,  800,  800 };
+static const int16_t g_bbox_vz[8] = {  -500,   500,  -500,   500, -500,  500, -500,  500 };
+static const uint8_t g_bbox_edge_a[12] = { 0, 0, 0, 1, 1, 2, 2, 3, 4, 4, 5, 6 };
+static const uint8_t g_bbox_edge_b[12] = { 1, 2, 4, 3, 5, 3, 6, 7, 5, 6, 7, 7 };
+
+const Model3D g_model_bbox_cuboid = {
+    .vertex_count     = 8,
+    .edge_count       = 12,
+    .center_x         = 0,
+    .center_y         = 0,
+    .center_z         = 0,
+    .radius           = 1527,   /* ceil(sqrt(1200²+800²+500²)) */
+    .object_color     = 0x0808,
+    .vx               = g_bbox_vx,
+    .vy               = g_bbox_vy,
+    .vz               = g_bbox_vz,
+    .edge_a           = g_bbox_edge_a,
+    .edge_b           = g_bbox_edge_b,
+    .face_count       = 0,      /* no hidden-line processing */
+    .face_nx          = NULL,
+    .face_ny          = NULL,
+    .face_nz          = NULL,
+    .edge_face0       = NULL,
+    .edge_face1       = NULL,
+    .edge_color_count = 0,
+    .edge_color       = NULL,
+};
+
 void camera_init(Camera *cam, vec3_t pos) {
     cam->position = pos;
     cam->yaw = 0;
