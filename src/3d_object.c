@@ -5,31 +5,6 @@
 
 #define SCALE 150
 
-static const int16_t g_empty_vx[1] = {
-    0
-};
-static const int16_t g_empty_vy[1] = {
-    0
-};
-static const int16_t g_empty_vz[1] = {
-    0
-};
-static const uint8_t g_empty_edge_a[0] = {};
-static const uint8_t g_empty_edge_b[0] = {};
-const Model3D g_model_empty = {
-    .vertex_count = 1,  
-    .edge_count = 0,    
-    .vx = g_empty_vx,
-    .vy = g_empty_vy,
-    .vz = g_empty_vz,
-    .edge_a = g_empty_edge_a,
-    .edge_b = g_empty_edge_b,
-    .center_x = 0,
-    .center_y = 0,
-    .center_z = 0,
-    .radius = 1, 
-};
-
 // Projectile
 #define P_SCALE 8
 static const int16_t g_projectile_vx[4] = { P_SCALE,  P_SCALE, -P_SCALE, -P_SCALE };
@@ -62,7 +37,7 @@ static const int16_t g_stars_vx[32] = {
     //-- 20 scatter fill points (hand-distributed across sky) --
      3000, -3000,  6000, -6000,  1000, -1000,  7000, -7000,
      4500, -4500,  2000, -2000,  6500, -6500,  3500, -3500,
-     5500, -5500,  7500,  -500,  4000,  1500, -4000, -1500
+     5500, -5500,  7500,  -500
 };
 
 static const int16_t g_stars_vy[32] = {
@@ -71,7 +46,7 @@ static const int16_t g_stars_vy[32] = {
     //-- 20 fill --
      7000,  7000,  2000,  2000,  8000,  8000,  1000,  1000,
     -7000, -7000, -2000, -2000, -5000, -5000,  5000,  5000,
-     3000,  3000, -6000, -6000, -4000,  6500,  4000, -6500
+     3000,  3000, -6000, -6000
 };
 
 static const int16_t g_stars_vz[32] = {
@@ -80,7 +55,7 @@ static const int16_t g_stars_vz[32] = {
     //-- 20 fill --
      1000, -1000,  5000, -5000,  2000, -2000,  3000, -3000,
      2500, -2500,  6000, -6000,  1500, -1500,  4500, -4500,
-     6000, -6000,  3000, -3000,  5500,  2000, -5500, -2000
+     6000, -6000,  3000, -3000
 };
 
 // Every edge is degenerate (a == b) → rendered as a point
@@ -298,44 +273,6 @@ const Model3D g_model_truncated_octahedron = {
     .edge_face1 = to_edge_face1
 };
 
-
-/* Arena bounding box for demo6 bounce.
- * Cuboid: 2400 (X) × 1600 (Y) × 1000 (Z), centred at (0, 0, BOING_Z).
- * face_count = 0 → no hidden-line processing applied to this object.
- *
- * Dimensions derived from bounce physics:
- *   X half-extent 1200: wall ±700 + object half-extent 480 + margin
- *   Y half-extent  800: floor/ceiling ±300 + object half-extent 480 + margin
- *   Z half-extent  500: object local z extent 480 + margin
- * Vertex layout mirrors g_model_cube (X changes every 4, Y every 2, Z alternates). */
-static const int16_t g_bbox_vx[8] = { -1200, -1200, -1200, -1200, 1200, 1200, 1200, 1200 };
-static const int16_t g_bbox_vy[8] = {  -800,  -800,   800,   800, -800, -800,  800,  800 };
-static const int16_t g_bbox_vz[8] = {  -500,   500,  -500,   500, -500,  500, -500,  500 };
-static const uint8_t g_bbox_edge_a[12] = { 0, 0, 0, 1, 1, 2, 2, 3, 4, 4, 5, 6 };
-static const uint8_t g_bbox_edge_b[12] = { 1, 2, 4, 3, 5, 3, 6, 7, 5, 6, 7, 7 };
-
-const Model3D g_model_bbox_cuboid = {
-    .vertex_count     = 8,
-    .edge_count       = 12,
-    .center_x         = 0,
-    .center_y         = 0,
-    .center_z         = 0,
-    .radius           = 1527,   /* ceil(sqrt(1200²+800²+500²)) */
-    .object_color     = 0x0808,
-    .vx               = g_bbox_vx,
-    .vy               = g_bbox_vy,
-    .vz               = g_bbox_vz,
-    .edge_a           = g_bbox_edge_a,
-    .edge_b           = g_bbox_edge_b,
-    .face_count       = 0,      /* no hidden-line processing */
-    .face_nx          = NULL,
-    .face_ny          = NULL,
-    .face_nz          = NULL,
-    .edge_face0       = NULL,
-    .edge_face1       = NULL,
-    .edge_color_count = 0,
-    .edge_color       = NULL,
-};
 
 void camera_init(Camera *cam, vec3_t pos) {
     cam->position = pos;

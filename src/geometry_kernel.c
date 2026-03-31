@@ -237,7 +237,6 @@ uint8_t vgk_status(void) {
 uint8_t vgk_wait_complete(uint16_t timeout_ms) {
     uint16_t elapsed = 0;
     volatile uint16_t raw_status = 0;
-    volatile uint16_t debug_iter = 0;
     while (elapsed < timeout_ms) {
         raw_status = vs1053_mem_read(VGK_STATUS);
 
@@ -308,16 +307,6 @@ uint8_t  g_edge_buf_flags[VGK_MAX_EDGES];
 
 // Forward declaration of the monolithic asm emitter.
 extern uint8_t vgk_scrn_edges_get_asm(uint8_t layer);
-
-static int16_t clamp_i16(int16_t value, int16_t minimum, int16_t maximum) {
-    if (value < minimum) {
-        return minimum;
-    }
-    if (value > maximum) {
-        return maximum;
-    }
-    return value;
-}
 
 // -----------------------------------------------------------------------------
 // State capture helper

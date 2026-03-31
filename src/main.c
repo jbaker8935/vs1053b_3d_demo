@@ -33,7 +33,7 @@ static vgm_himem_ctx_t g_vgm_himem;
 static vgm_himem_ctx_t g_vgm_fx_himem;
 static bool            g_vgm_open  = false;
 static bool            g_vgm_is_fx = false;  /* true while a one-shot FX stream is playing */
-static const char     *g_vgm_path = NULL;
+static char           *g_vgm_path = NULL;
 
 /* Re-arm the player from the beginning of the cached stream.
  * Non-static: called from demos.c to restart after demo6 completes. */

@@ -73,21 +73,11 @@ typedef struct {
     POINTER(const Model3D) model;
 } __attribute__((packed)) Instance3D;
 
-typedef struct {
-    uint8_t count;     // Must be first element in structure for assembly offset calculation
-    uint8_t _pad[3];   // Ensure x/y/z arrays start on a 4-byte boundary
-    float x[MODEL3D_MAX_VERTICES];
-    float y[MODEL3D_MAX_VERTICES];
-    float z[MODEL3D_MAX_VERTICES];
-} VertexBatchSoA;
-
-extern const Model3D g_model_empty;
 extern const Model3D g_model_projectile;
 extern const Model3D g_model_starfield;
 extern const Model3D g_model_cube;
 extern const Model3D g_model_anaconda;
 extern const Model3D g_model_truncated_octahedron;
-extern const Model3D g_model_bbox_cuboid;
 
 typedef struct {
     vec3_t position;

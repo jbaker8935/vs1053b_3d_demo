@@ -55,12 +55,6 @@ static void emit_struct_offsets(void) {
     EMIT_EQU(INSTANCE3D_MODEL, offsetof(Instance3D, model));
     EMIT_EQU(INSTANCE3D_SIZE, sizeof(Instance3D));
 
-    EMIT_EQU(VERTEX_BATCH_SOA_COUNT, offsetof(VertexBatchSoA, count));
-    EMIT_EQU(VERTEX_BATCH_SOA_X, offsetof(VertexBatchSoA, x));
-    EMIT_EQU(VERTEX_BATCH_SOA_Y, offsetof(VertexBatchSoA, y));
-    EMIT_EQU(VERTEX_BATCH_SOA_Z, offsetof(VertexBatchSoA, z));
-    EMIT_EQU(VERTEX_BATCH_SOA_SIZE, sizeof(VertexBatchSoA));
-
     EMIT_EQU(CAMERA_POSITION_X, offsetof(Camera, position) + offsetof(vec3_t, x));
     EMIT_EQU(CAMERA_POSITION_Y, offsetof(Camera, position) + offsetof(vec3_t, y));
     EMIT_EQU(CAMERA_POSITION_Z, offsetof(Camera, position) + offsetof(vec3_t, z));

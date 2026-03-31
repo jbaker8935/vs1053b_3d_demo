@@ -22,7 +22,7 @@ PYTHON ?= python3
 
 LDSCRIPT ?= f256.ld
 CFLAGS ?= -I$(ROOT) -I$(ROOT)/src -I$(ROOT)/include -I/opt/llvm-mos/include -Os -Wall -D__llvm_mos__
-
+ASMFLAGS ?= -I$(ROOT) -I$(ROOT)/src -I$(ROOT)/include -I/opt/llvm-mos/include -Wall
 LDFLAGS ?=
 
 # Collect sources from src/ only. Explicitly exclude libfixmath and other dirs.
@@ -41,6 +41,8 @@ dirs:
 	@mkdir -p $(BUILD_DIR)
 
 COMPILE = $(CC) -c $(CFLAGS) -o $@ $<
+
+COMPILE_ASM = $(CC) -c $(ASMFLAGS) -o $@ $<
 
 # Host C compiler for build-time tools (used to compile the offsets generator)
 CC_HOST ?= cc
@@ -62,7 +64,7 @@ $(BUILD_DIR)/%.o: src/%.c | dirs
 	$(COMPILE)
 
 $(BUILD_DIR)/%.o: src/%.s build/struct_offsets.inc | dirs
-	$(COMPILE)
+	$(COMPILE_ASM)
 
 # Compile the bench harness (not in src/) so it can be built independently
 $(BUILD_DIR)/bench_mul.o: tools/bench_mul.c | dirs
