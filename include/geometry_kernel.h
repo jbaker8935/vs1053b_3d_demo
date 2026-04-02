@@ -129,7 +129,6 @@
 #define VGK_OUTPUT_EDGE_FLAGS      VGK_OUTPUT_EDGE_FLAGS_X
 #define VGK_OUTPUT_EDGE_PACKED     VGK_OUTPUT_EDGE_PACKED_X
 // Flag word[i] = (flags[2i+1] << 8) | flags[2i]  (low byte = even edge, high byte = odd edge)
-
 // Save slot layout — host writes geometry directly to VGK_SAVE_AREA_X + slot * VGK_SAVE_SLOT_SIZE.
 // The DSP _load_object copies from the chosen slot to the active working area on each trigger.
 // Slot field offsets match the order used by the DSP _load_object function in geometry5.s.
@@ -283,7 +282,7 @@ uint8_t vgk_scrn_edges_get(Model3D * model, uint8_t color);
 
 /* Register a callback that vgk_yield() calls on every
 * polling iteration instead of the default nop-delay.  Pass NULL to restore
-* the default behaviour.  Intended for audio tick servicing during DSP waits
+* the default behavior.  Intended for audio tick servicing during DSP waits
 * so that the audio loop is not starved when multiple objects are rendered. */
 void vgk_yield_cb_set(void (*cb)(void));
 void vgk_yield(void);
@@ -332,11 +331,6 @@ typedef struct {
 
 void vgk_plugin_capture_state(PluginCapture *cap);
 
-/* VS1053 helpers moved to vs1053b.h */
-
-
-// custom file write helper
-int16_t kernelWriteC(uint8_t fd, void *buf, uint16_t nbytes);
 
 // ==============================================================================
 // SCENE API

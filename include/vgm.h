@@ -10,34 +10,30 @@
  * Usage:
  *   1. Implement vgm_read_fn and vgm_seek_fn callbacks backed by whatever
  *      storage is available (SD-card file, high RAM, etc.).
- *   2. Call vgm_open(), passing your callbacks and an opaque context pointer.
+ *   2. Call vgm_open(), passing your callbacks and a context pointer.
  *   3. Call vgm_service() from your main loop as fast as possible.
  *   4. Optionally call timer_t0_service() in the same loop for general alarms;
  *      the shared T0 protocol ensures they coexist safely.
  *   5. vgm_service() returns VGM_DONE when playback is complete.
  *   6. Call vgm_close() to silence the chip and restore fixed-rate T0 mode.
- *      The library does NOT close the underlying stream; that is the
+ *      The library does not close the underlying stream; that is the
  *      caller's responsibility.
  *
- * Constraints and design notes:
- *   - Streams from the source; never loads the whole VGM into RAM.
+ * Notes:
+ *   - Streams from the source; Loads hi-mem chunks into a local buffer as needed.
  *   - VGM_BUF_SIZE bytes are refilled via read_fn as needed
  *   - Only OPL2 (0x5A) and OPL3 (0x5E / 0x5F) register-write commands are
- *     acted on.  All other command bytes are skipped per the VGM spec.
+ *     acted on.  All other command bytes are skipped.
  *   - Waiting is done by programming T0 via timer_set_period() (variable-rate
  *     mode); timer_t0_service() remains callable for concurrent general alarms.
  *   - Loop point is honored once; the stream then plays to end and stops.
- *   - The library manages playback state internally; callers only implement
- *     the `vgm_read_fn`/`vgm_seek_fn` callbacks and call `vgm_open()`,
- *     `vgm_service()`, and `vgm_close()`.
+
  */
 
 /* Streaming buffer size.  */
 #define VGM_BUF_SIZE 255u /* to fit within 8-bit index.  MUST be 96 or larger */
 
-/* Dot-clock ticks per VGM 44100 Hz sample: 25,175,000 / 44,100 = 570.86 → 571.
- * Shared here so vgm_fx.c can convert FX wait sample counts to T0 ticks
- * using the same constant as the main player. */
+/* Dot-clock ticks per VGM 44100 Hz sample: 25,175,000 / 44,100 = 570.86 → 571.  */
 #define VGM_TICKS_PER_SAMPLE 571u
 
 /* Internal flags bits stored in the player's internal flags */
@@ -46,7 +42,6 @@
 #define VGM_FLAG_DONE            0x04u  /* playback complete */
 #define VGM_FLAG_COMPENSATE      0x08u  /* next schedule_wait() should subtract
                                          * T0 overrun from the programmed period */
-#define VGM_FLAG_PAUSED          0x10u  /* stream frozen; only FX ticks advance */
 
 typedef enum {
     VGM_PLAYING = 0,  /* actively dispatching commands */
@@ -72,19 +67,10 @@ typedef uint16_t (*vgm_read_fn)(void *ctx, uint8_t *buf, uint16_t len);
  */
 typedef void (*vgm_seek_fn)(void *ctx, uint32_t offset);
 
-/* Playback state is internal to the library; callers do not allocate or
- * manage a player object.  Implement the `vgm_read_fn`/`vgm_seek_fn`
- * callbacks and call `vgm_open()`, `vgm_service()`, and `vgm_close()`.
- */
-
 /*
  * vgm_open(p, read_fn, seek_fn, io_ctx)
  *   Parse the VGM header, detect OPL2/3 mode, initialise the OPL3 chip,
- *   seek to the data block, and prime the stream buffer.
- *
- *   The stream must be positioned at byte offset 0 before this call.
- *   seek_fn MUST be non-NULL; it is called at least once during open and
- *   again whenever the loop point is revisited.
+ *   and init the stream buffer.
  *
  *   Returns VGM_PLAYING on success, VGM_ERROR on failure.
  */
@@ -94,8 +80,7 @@ vgm_status_t vgm_open(vgm_read_fn read_fn, vgm_seek_fn seek_fn,
 /*
  * vgm_open_mem(data, len)
  *   Convenience wrapper around vgm_open() that plays a VGM byte array
- *   stored in RAM.  The array must remain valid for the lifetime of the
- *   playback session (i.e. until vgm_close() is called).
+ *   stored in RAM.
  *
  *   Returns VGM_PLAYING on success, VGM_ERROR on failure.
  */
@@ -116,26 +101,16 @@ vgm_status_t vgm_service(void);
 
 /*
  * vgm_close()
- *   Silence all OPL3 channels and restore T0 to fixed-rate (30 Hz) mode
+ *   Silence all OPL3 channels and restore T0 to fixed-rate (T0_TICK_FREQ) mode
  *   so that general alarms resume normal operation.
- *   Safe to call from any state, including after VGM_ERROR.
- *   Does NOT close or release the underlying stream; the caller must do
+ *   Does not close or release the underlying stream; the caller must do
  *   that via io_ctx after this function returns.
  */
 void vgm_close(void);
 
 /*
  * vgm_opl_init()
- *   Perform the minimal OPL3 chip-level initialisation that vgm_open()
- *   would normally do: enable waveform-select, enable OPL3 mode, disable
- *   percussion mode, enable L+R output on all 18 channels, and key-off
- *   every channel.
- *
- *   Call this from main() before any FX playback when no VGM stream will
- *   be opened, so the OPL3 chip is in a known good state regardless of
- *   whether background music is active.
- *   It is safe (and harmless) to call this even when vgm_open() will also
- *   be called; vgm_open() calls the same init internally.
+ *   Perform the minimal OPL3 chip-level initialisation
  */
 void vgm_opl_init(void);
 

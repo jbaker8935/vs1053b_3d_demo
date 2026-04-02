@@ -11,7 +11,6 @@
 #include "../include/video.h"
 #include "../include/input.h"
 #include "../include/game_state.h"
-#include "../include/scene.h"
 #include "../include/demo.h"
 
 uint8_t out_edge_count = 0;

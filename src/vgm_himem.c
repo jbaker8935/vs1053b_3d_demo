@@ -2,8 +2,7 @@
  * vgm_himem.c -- VGM high-memory cache backend for F256 Jr.
  *
  * Caches the entire VGM file into an extended 512 KiB RAM block using
- * movedown24 (65816 MVN via the core2x flat-memory extension) for bulk copies,
- * and POKE24/PEEK24 (W65C02S STA [zp] / LDA [zp]) for single-byte fallback.
+ * movedown24
  *
  * After vgm_himem_load() the SD card is no longer accessed during playback.
  */
@@ -189,7 +188,7 @@ asm(
  * vgm_himem_read -- vgm_read_fn callback.
  *
  * Copies `len` bytes from the high-memory cache into the player's near-RAM
- * buffer using movedown24 (~4 cycles/byte vs ~29 for SPI).
+ * buffer using movedown24 
  * ----------------------------------------------------------------------- */
 uint16_t vgm_himem_read(void *ctx, uint8_t *buf, uint16_t len)
 {
@@ -218,14 +217,7 @@ void vgm_himem_seek(void *ctx, uint32_t offset)
 }
 
 /* -----------------------------------------------------------------------
- * kernelReadC -- single-shot kernel file read (no internal retry loop).
- *
- * Unlike fileRead / kernelRead, this issues one File.Read request and
- * returns immediately with however many bytes the kernel delivered.
- * Returns 0 on EOF, -1 on error.  The caller loops until 0 or -1.
- *
- * The EOF macro from f256lib conflicts with kernelEvent(file.EOF), so we
- * temporarily suppress it with push/pop_macro.
+ * kernelReadC 
  * ----------------------------------------------------------------------- */
 #pragma push_macro("EOF")
 #undef EOF
@@ -260,12 +252,10 @@ static __attribute__((noinline)) int16_t kernelReadC(uint8_t fd, void *buf, uint
  *
  * Opens the file with fileOpen, then loops calling kernelReadC (255 bytes
  * at a time) until EOF.  Each chunk is copied to high memory by movedown24.
- * The static staging buffer avoids a 255-byte local on the 6502 stack.
  * ----------------------------------------------------------------------- */
 __attribute__((noinline))
 bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
 {
-    /* 255 bytes: maximum for kernelReadC (buflen is uint8_t). */
     static uint8_t s_chunk[255];
 
     uint8_t *fd = fileOpen((char *)path, "r");
@@ -278,7 +268,7 @@ bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
     uint32_t chunks = 0u;
     int16_t  n;
     for (;;) {
-        n = kernelReadC(*fd, s_chunk, 255u);
+        n = kernelReadC(*fd, s_chunk, 255);
         if (n <= 0) break;
         if (total == 0u) {
             if (n < 4 || s_chunk[0] != 'V' || s_chunk[1] != 'g' ||

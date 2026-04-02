@@ -1,5 +1,7 @@
-# K2 VS1053b 3d Demo 
+# VS1053b Geometry Kernel for Wildbits K2
 
-Application is a self-running demo of various features of the vs1053b geometry kernel plugin
+API and demonstration applications for 3d coprocessor application running on the Wildbits K2 VS1053b chip.
+
+
 
 If you have questions I'm usually on the  wildbits computing discord (jbaker8935)

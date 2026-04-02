@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geometry Kernel API User Guide</title>
+  <style>
+    :root {
+      --bg: #12161a;
+      --panel: #1a2128;
+      --panel-2: #212b34;
+      --text: #e6edf3;
+      --muted: #a7b3bf;
+      --accent: #3dd6c6;
+      --accent-2: #ffba49;
+      --border: #2f3b46;
+      --code-bg: #0f1418;
+      --table-alt: #182029;
+      --link: #65e3d6;
+      --shadow: rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at top right, #1e2a33 0%, var(--bg) 45%);
+      color: var(--text);
+      font-family: "Segoe UI", "Noto Sans", "Liberation Sans", sans-serif;
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 260px;
+      height: 100vh;
+      overflow-y: auto;
+      background: linear-gradient(180deg, #1f2831 0%, #161d24 100%);
+      border-right: 1px solid var(--border);
+      box-shadow: 2px 0 16px var(--shadow);
+      padding: 18px 14px 26px;
+      z-index: 10;
+    }
+
+    .sidebar h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      line-height: 1.3;
+      color: var(--accent);
+    }
+
+    .sidebar p {
+      margin: 10px 0 14px;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    .sidebar nav ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .sidebar nav li {
+      margin: 0;
+      padding: 0;
+    }
+
+    .sidebar nav a {
+      display: block;
+      padding: 8px 10px;
+      border-radius: 7px;
+      color: #d4e4f0;
+      font-size: 0.9rem;
+      border: 1px solid transparent;
+      transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    }
+
+    .sidebar nav a:hover {
+      background: #24303a;
+      border-color: #33414d;
+      text-decoration: none;
+    }
+
+    .sidebar nav a.active {
+      background: #243f3c;
+      border-color: #30655f;
+      color: #dffffa;
+      font-weight: 600;
+    }
+
+    main {
+      margin-left: 260px;
+      padding: 28px 28px 48px;
+      width: calc(100% - 260px);
+    }
+
+    .content-wrap {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    header.hero {
+      background: linear-gradient(130deg, #1f2a33 0%, #23353a 60%, #2c3a2b 100%);
+      border: 1px solid #33515a;
+      border-radius: 12px;
+      padding: 20px 20px 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 20px var(--shadow);
+    }
+
+    header.hero h2 {
+      margin: 0 0 8px;
+      font-size: 1.55rem;
+      color: #ecfffc;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #cae5e2;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 18px 16px;
+      margin: 18px 0;
+      box-shadow: 0 2px 10px var(--shadow);
+      scroll-margin-top: 18px;
+    }
+
+    section h2 {
+      margin: 0 0 12px;
+      font-size: 1.35rem;
+      color: var(--accent);
+      border-bottom: 1px dashed #35505d;
+      padding-bottom: 7px;
+    }
+
+    section h3 {
+      margin: 16px 0 8px;
+      font-size: 1.04rem;
+      color: var(--accent-2);
+    }
+
+    p,
+    li {
+      color: var(--text);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    ul,
+    ol {
+      margin-top: 8px;
+      margin-bottom: 8px;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .note {
+      background: #26333f;
+      border-left: 4px solid var(--accent-2);
+      padding: 9px 11px;
+      border-radius: 4px;
+      color: #d8e4ef;
+    }
+
+    .warn {
+      background: #3a2f1b;
+      border-left: 4px solid #f4b03a;
+      padding: 9px 11px;
+      border-radius: 4px;
+      color: #ffe8be;
+    }
+
+    code {
+      font-family: "Cascadia Code", "Fira Mono", Consolas, monospace;
+      font-size: 0.92em;
+      background: #22303b;
+      color: #e7fffd;
+      border: 1px solid #334959;
+      border-radius: 4px;
+      padding: 0 4px;
+    }
+
+    pre {
+      margin: 10px 0 12px;
+      padding: 12px;
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid #2e4050;
+      background: var(--code-bg);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      color: #dbe8f6;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      display: block;
+      white-space: pre;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px;
+      font-size: 0.92rem;
+    }
+
+    th,
+    td {
+      border: 1px solid #31404d;
+      text-align: left;
+      vertical-align: top;
+      padding: 8px;
+    }
+
+    th {
+      background: #27333e;
+      color: #e4f2ff;
+    }
+
+    tr:nth-child(even) td {
+      background: var(--table-alt);
+    }
+
+    .mono-list li {
+      font-family: "Cascadia Code", "Fira Mono", Consolas, monospace;
+      font-size: 0.9rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .sidebar {
+        width: 220px;
+      }
+
+      main {
+        margin-left: 220px;
+        width: calc(100% - 220px);
+      }
+
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .layout {
+        display: block;
+      }
+
+      .sidebar {
+        position: relative;
+        width: 100%;
+        height: auto;
+      }
+
+      main {
+        margin-left: 0;
+        width: 100%;
+        padding: 18px 12px 26px;
+      }
+
+      .content-wrap {
+        max-width: 100%;
+      }
+
+      section {
+        padding: 14px 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Geometry Kernel API Guide</h1>
+      <p>VS1053b 3D coprocessor API reference and usage patterns for 
+        Wildbits K2.</p>
+      <nav>
+        <ul>
+          <li><a href="#introduction">1. Introduction</a></li>
+          <li><a href="#theory">2. Operation</a></li>
+          <li><a href="#options">3. Configuration Options</a></li>
+          <li><a href="#objects">4. Defining 3D Objects</a></li>
+          <li><a href="#limits">5. Object And Scene Limits</a></li>
+          <li><a href="#graphics-setup">6. DemonstrationGraphics Mode Setup</a></li>
+          <li><a href="#init">7. Kernel Initialization</a></li>
+          <li><a href="#single-object">8. Single Object Flow</a></li>
+          <li><a href="#example-single">9. Single Object Example</a></li>
+          <li><a href="#scene-mode">10. Scene Mode</a></li>
+          <li><a href="#example-scene">11. Multi-Object Example</a></li>
+          <li><a href="#api-reference">12. API Reference</a></li>
+          <li><a href="#type-reference">13. Data Types</a></li>
+          <li><a href="#constants">14. Constants Reference</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <main>
+      <div class="content-wrap">
+        <header class="hero">
+          <h2>VS1053b Geometry Kernel User Guide</h2>
+          <p>
+            This guide documents the geometry kernel host API, memory-model assumptions, and
+            render-flow integration needed to draw wireframe objects and scenes on K2 bitmap layers.
+          </p>
+        </header>
+
+        <section id="introduction">
+          <h2>1. Introduction</h2>
+          <p>
+            The geometry kernel runs on the VS1053b DSP and acts as a 3D coprocessor for the host CPU.
+            The host configures models, camera/object transforms, and projection, then triggers the DSP and
+            reads projected edge results for rasterization by the K2's hardware line drawing engine.
+          </p>
+          <p>
+            Core capabilities include:
+            <ul>
+              <li>3d object loading into kernel memory (8 save slots)</li>
+              <li>3d scaling, translation and 3-axis rotation</li>
+              <li>vertex screen projection and edge clipping</li>
+              <li>hidden-line removal using face normals</li>
+              <li>near/far depth object edge coloring</li>
+              <li>camera translation and rotation</li>
+              <li>scene definition of up to 8 objects</li>
+              <li>scene rendering with or without AABB occlusion</li>
+            </ul>
+          </p>
+          <p>
+            The VS1053b supports user application though its plugin interface, which allows custom code to run on the DSP and access shared RAM buffers.
+             The geometry kernel is implemented as a plugin that occupies the DSP and exposes a C API to the host for SCI-based control and data exchange.
+             VS1053b audio processing should be disabled when using the plugin.
+          </p>
+
+        </section>
+
+        <section id="theory">
+          <h2>2. Operation</h2>
+          <h3>Host/DSP Communication Model</h3>
+          <ul>
+            <li>Host writes parameters and geometry into VS1053b shared RAM regions using the K2's SCI interface to the VS1053b.</li>
+            <li>Host triggers processing by writing <code>VGK_TRIGGER_MAGIC</code> (<code>0xCAFE</code>) to <code>SCI_AICTRL0</code>.  
+              The VS1053b detects the write to that register and calls the plugin dispatch address</li>
+            <li>The geometry kernel executes transform and projection operations and then updates the status memory location with <code>VGK_STATUS</code> (<code>idle</code>, <code>busy</code>, <code>done</code>, error codes).</li>
+            <li>Host polls the status using SCI and then reads output edge/screen buffers to pass to the hardware line drawing engine.</li>
+          </ul>
+
+          <h3>Pipeline Stages</h3>
+          <ol>
+            <li>Load model into one of 8 save slots with <code>vgk_model_slot_init</code> or part-wise slot init calls.</li>
+            <li>Set camera/object parameters using Euler angles, scale, and translation.</li>
+            <li>Trigger DSP with <code>vgk_trigger</code>.</li>
+            <li>DSP computes trig terms using an internal lookup table, builds the transform matrix and transforms vertices.</li>
+            <li>DSP performs perspective projection and clipping.</li>
+            <li>Optional hidden-line test uses face normals + edge-face adjacency.</li>
+            <li>DSP writes output packed edges, flags, and clip vertices.</li>
+            <li>Host reads output and draws lines onto the target bitmap layer.</li>
+          </ol>
+
+          <h3>Numeric Representation</h3>
+          <ul>
+            <li>Angles: 8-bit index into a 256-entry sine table (
+              <code>0..255 == 0..2*pi</code>).
+            </li>
+            <li>Trig and matrix terms are Q14 fixed-point.</li>
+            <li>Object scale is Q7 (<code>128</code> means 1.0x).</li>
+            <li>Coordinates are <code>int16_t</code> model/world/view values.</li>
+            <li>World coordinate range: -16384..16383</li>
+          </ul>
+
+          <h3>Depth Classification</h3>
+          <p>
+            Each visible edge can be flagged as near or far (<code>VGK_EDGE_NEAR</code>) by the kernel and the host can use different palette colors.
+            By default the color pair used by the host comes from <code>Model3D.object_color</code> (high byte = far, low byte = near).
+            Near/far coloring is optional and can be disabled for better performance.
+          </p>
+        </section>
+
+        <section id="options">
+          <h2>3. Configuration Options</h2>
+          <h3>Projection Control</h3>
+          <ul class="mono-list">
+            <li>vgk_projection_params_init(int16_t focal, int16_t half_w, int16_t half_h, int16_t near_z)</li>
+            <li>vgk_projection_enable(void)</li>
+            <li>vgk_projection_disable(void)</li>
+          </ul>
+          <p>
+            <code>focal</code>, <code>half_w</code>, <code>half_h</code>, and <code>near_z</code> directly shape perspective and clipping.
+          </p>
+
+          <h3>Hidden-Line Removal</h3>
+          <ul class="mono-list">
+            <li>vgk_hidden_line_enable(void)</li>
+            <li>vgk_hidden_line_disable(void)</li>
+          </ul>
+          <p>
+            Hidden-line mode requires valid face normal and edge-face data in the loaded slot.
+            If a model has no face data then objects will be rendered as wireframe.
+          </p>
+
+          <h3>Depth Coloring Controls</h3>
+          <ul>
+            <li><code>Model3D.object_color</code>: packed 16-bit near/far palette indices.</li>
+            <li><code>Model3D.edge_color</code>/<code>edge_color_count</code>: optional per-edge color overrides. FUTURE: renderer does not currently implement object defined edge coloring</li>
+            <li><code>vgk_no_near_far_coloring</code> global: force all edges to near color when true.</li>
+          </ul>
+
+          <h3>Yield Hook During Wait Loops</h3>
+          <ul class="mono-list">
+            <li>vgk_yield_cb_set(void (*cb)(void))</li>
+            <li>vgk_yield(void)</li>
+          </ul>
+          <p>
+            Use the callback to service other tasks while the kernel is processing the 3D geometry.
+          </p>
+        </section>
+
+        <section id="objects">
+          <h2>4. Defining 3D Objects</h2>
+          <p>
+            Objects are defined with <code>Model3D</code>.  Coordinates and normals are
+            fixed-point integer data, while edge lists are byte index pairs.
+          </p>
+
+          <h3>Model3D Field Summary</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>vertex_count</td><td>uint8_t</td><td>Number of vertices</td></tr>
+              <tr><td>edge_count</td><td>uint8_t</td><td>Number of edges</td></tr>
+              <tr><td>center_x/y/z, radius</td><td>int16_t</td><td>Bounding sphere metadata</td></tr>
+              <tr><td>object_color</td><td>uint16_t</td><td>High byte = far color, low byte = near color</td></tr>
+              <tr><td>vx/vy/vz</td><td>const int16_t*</td><td>Vertex arrays </td></tr>
+              <tr><td>edge_a/edge_b</td><td>const uint8_t*</td><td>Per-edge vertex indices</td></tr>
+              <tr><td>face_count</td><td>uint8_t</td><td>Number of faces (for hidden-line)</td></tr>
+              <tr><td>face_nx/ny/nz</td><td>const int16_t*</td><td>Face normals (Q14)</td></tr>
+              <tr><td>edge_face0/edge_face1</td><td>const uint8_t*</td><td>Adjacent face indices per edge</td></tr>
+              <tr><td>edge_color_count</td><td>uint8_t</td><td>Count of per-edge color entries</td></tr>
+              <tr><td>edge_color</td><td>const uint16_t*</td><td>Optional packed near/far per-edge colors</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Object Color Example Encoding</h3>
+          <pre><code>uint16_t object_color = 0x0D0B;  // index pair into bitmap palette
+// far color  = 0x0D (high byte) (e.g. darker shade)
+// near color = 0x0B (low byte) (e.g. lighter shade)</code></pre>
+
+          <h3>Hidden-Line Data Requirements</h3>
+          <ul>
+            <li><code>face_count &gt; 0</code></li>
+            <li><code>face_nx/face_ny/face_nz</code> arrays sized to <code>face_count</code></li>
+            <li><code>edge_face0/edge_face1</code> arrays sized to <code>edge_count</code></li>
+            <li>Use <code>MODEL3D_INVALID_FACE</code> (<code>0xFF</code>) for boundary/silhouette edges</li>
+          </ul>
+
+          <h3>Demonstration Code Built-In Models</h3>
+          <table>
+            <thead>
+              <tr><th>Model</th><th>Vertices</th><th>Edges</th><th>Face Data</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>g_model_projectile</td><td>4</td><td>6</td><td>No</td><td>Tetrahedron projectile</td></tr>
+              <tr><td>g_model_starfield</td><td>32</td><td>32</td><td>No</td><td>Degenerate edges as points</td></tr>
+              <tr><td>g_model_cube</td><td>8</td><td>12</td><td>Yes</td><td>Canonical hidden-line test model</td></tr>
+              <tr><td>g_model_anaconda</td><td>15</td><td>25</td><td>Yes</td><td>Elite ship-style complex model</td></tr>
+              <tr><td>g_model_truncated_octahedron</td><td>24</td><td>36</td><td>Yes</td><td>Largest supported object</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="limits">
+          <h2>5. Object And Scene Limits</h2>
+          <div class="grid-2">
+            <div>
+              <h3>Per Object Limits</h3>
+              <ul>
+                <li><code>VGK_MAX_VERTICES = 32</code></li>
+                <li><code>VGK_MAX_EDGES = 36</code></li>
+                <li><code>VGK_MAX_FACES = 16</code></li>
+                <li><code>VGK_MAX_INPUT_EDGES = 36</code></li>
+              </ul>
+            </div>
+            <div>
+              <h3>Slot/Scene Limits</h3>
+              <ul>
+                <li><code>8</code> save slots (slot index <code>0..7</code>)</li>
+                <li><code>VGK_SCENE_MAX_OBJECTS = 8</code></li>
+                <li><code>VGK_SCENE_MAX_VERTS = 256</code> combined</li>
+                <li><code>VGK_SCENE_MAX_EDGES = 288</code> combined</li>
+                <li><code>VGK_SCENE_MAX_CLIPS = 64</code> combined clip verts</li>
+              </ul>
+            </div>
+          </div>
+          <div class="warn">
+            Scene clip vertices share one global pool. Heavy clipping across many objects can exhaust
+            <code>VGK_SCENE_MAX_CLIPS</code> before per-object edge/vertex limits are reached.
+          </div>
+        </section>
+
+        <section id="graphics-setup">
+          <h2>6. Demonstration Graphics Mode Setup</h2>
+          <p>
+            Geometry kernel output is edge data. The host must configure bitmap layers and a
+            line rasterizer target before invoking draw routines.
+          </p>
+
+          <h3>Layer Configuration Pattern</h3>
+          <ul>
+            <li><code>video_init()</code> sets up layer 0, layer 1, and layer 2 bitmap modes.</li>
+            <li>Layer 1 and layer 2 use CLUT 0 for 3D rendering (double buffer pair).</li>
+            <li>Layer 0 uses CLUT 1 for cockpit/overlay used with Anaconda demos.</li>
+          </ul>
+
+          <h3>Frame-Safe Drawing Sequence</h3>
+          <ol>
+            <li>Pick hidden draw layer (<code>draw_layer = visible == 1 ? 2 : 1</code>).</li>
+            <li>Clear hidden layer via <code>dmaBitmapClear()</code></li>
+            <li>Run geometry kernel and render edges into the bitmap layer using the appropriate function for single object or scene mode processing.</li>
+            <li>Wait vblank via <code>video_wait_vblank()</code>.</li>
+            <li>Show new layer and hide old layer.</li>
+          </ol>
+
+          <div class="note">
+            <code>render_frame()</code> in <code>src/render.c</code> is a production example of this double-buffer swap.
+          </div>
+        </section>
+
+        <section id="init">
+          <h2>7. Kernel Initialization</h2>
+          <pre><code>// 1) Init display + plugin state
+video_init();
+vgk_plugin_init();
+vs1053_dac_mute();   // Mute and disable DAC interrupts
+vs1053_dac_interrupt_disable(); // Decoder RAM is being used.
+
+// 2) Load model data into save slots
+vgk_model_slot_init(&g_model_cube, 0);
+vgk_model_slot_init(&g_model_anaconda, 1);
+
+// 3) Projection defaults (example values)
+vgk_projection_params_init(120, 160, 120, -64);
+
+// 4) Camera defaults
+vgk_cam_params_set(0, 0, 0, 0, 200, 1400);
+
+// 5) Optional: service callback while waiting (example audio hook)
+vgk_yield_cb_set(vgm_service_tick);</code></pre>
+
+          <h3>Model Load Variants</h3>
+          <ul class="mono-list">
+            <li>vgk_model_slot_init(model, slot)  // vertices + edges + hidden-line payload</li>
+            <li>vgk_model_vertices_init(model, slot)</li>
+            <li>vgk_model_edges_init(model, slot)</li>
+            <li>vgk_model_hidden_line_init(model, slot)</li>
+          </ul>
+          <p>
+            Use split loads only if you intentionally manage partial slot updates.
+          </p>
+        </section>
+
+        <section id="single-object">
+          <h2>8. Single Object Flow</h2>
+          <h3>Core Runtime Sequence</h3>
+          <ol>
+            <li>Load target slot into active object context with <code>vgk_model_load(slot)</code>.</li>
+            <li>Set transform using <code>vgk_obj_params_set(...)</code>.</li>
+            <li>Reset/status clear if needed (<code>vgk_reset()</code>).</li>
+            <li>Call <code>vgk_trigger()</code>.</li>
+            <li>Wait via <code>vgk_wait_complete(timeout_ms)</code>.</li>
+            <li>Read+emit edges with <code>vgk_scrn_edges_with_depth_get(model, draw_layer)</code>.</li>
+          </ol>
+
+          <h3>Wait Return Codes</h3>
+          <table>
+            <thead>
+              <tr><th>Return</th><th>Meaning</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>Complete</td><td>Proceed to read output</td></tr>
+              <tr><td>2</td><td>Kernel error status</td><td>Inspect <code>vgk_status()</code>, recover/reset</td></tr>
+              <tr><td>0</td><td>Timeout</td><td>Treat as stalled operation, retry/reset</td></tr>
+            </tbody>
+          </table>
+
+          <div class="note">
+            Prefer <code>vgk_scrn_edges_with_depth_get</code> over <code>vgk_scrn_edges_get</code>; the depth version
+            is optimized and integrates near/far color emission behavior.
+          </div>
+        </section>
+
+        <section id="example-single">
+          <h2>9. Single Object Example</h2>
+          <p>
+            High-level example for rendering one spinning cube using the non-scene path.
+          </p>
+          <pre><code>#define F256LIB_IMPLEMENTATION
+#include "f256lib.h"
+
+#include "../include/geometry_kernel.h"
+#include "../include/3d_object.h"
+#include "../include/video.h"
+#include "../include/draw_line.h"
+
+static uint8_t visible_layer = 1;
+void app_init(void) {
+    vs1053_clock_boost();
+    vs1053_plugin_load();     
+    vgk_plugin_init();
+    vs1053_dac_mute();
+    vs1053_dac_interrupt_disable(); // Decoder RAM is being used.  
+    vgk_projection_params_init(120, 160, 120, -64);
+    vgk_model_slot_init(&g_model_cube, 0);
+    vgk_cam_params_set(0, 0, 0, 0, 200, 1400);
+    vgk_hidden_line_enable();
+    vgk_no_near_far_coloring = false;
+}
+
+void app_frame(uint8_t scale, uint8_t yaw, uint8_t pitch) {
+    uint8_t draw_layer = (visible_layer == 1) ? 2 : 1;
+    dmaBitmapClear(draw_layer);
+    vgk_obj_params_set(pitch, yaw, 0, scale, 0, 0, -300);
+    vgk_reset();
+    vgk_trigger();
+    uint8_t status = vgk_wait_complete(10000);
+    if (status == 1) {
+        vgk_scrn_edges_with_depth_get((Model3D *)&g_model_cube, draw_layer);
+    } else if (status == 0){
+        textPrint("Error: Geometry kernel timeout.\n");
+    } 
+    video_wait_vblank();
+    bitmapSetVisible(draw_layer, true);
+    bitmapSetVisible(visible_layer, false);
+    visible_layer = draw_layer;
+}
+
+
+int main(int argc, char *argv[]) {
+    (void)argc;
+    (void)argv;
+    uint8_t obj_yaw = 0;
+    uint8_t obj_pitch = 0;
+
+    video_init();
+    app_init();
+    textGotoXY(0, 0);
+    textPrint("App Init Complete. \n");
+    // make cube active object
+    vgk_model_load(0);
+    for (uint8_t loops = 0; loops < 4; loops++) {
+        for(uint8_t frame=0; frame < 128; frame++) {
+            app_frame(frame<64 ? 128 + frame : 192 - (frame - 64), obj_yaw++, obj_pitch++);
+        }
+    }
+    textPrint("Done! Press any key to exit.\n");
+    getchar();
+    return 0;
+}
+</code></pre>
+        </section>
+
+        <section id="scene-mode">
+          <h2>10. Scene Mode</h2>
+          <p>
+            Scene mode processes multiple objects in one trigger using a descriptor array of
+            <code>SceneObjectParams</code> records.
+          </p>
+
+          <h3>Scene Setup/Execution API</h3>
+          <ul class="mono-list">
+            <li>vgk_scene_enable(void)</li>
+            <li>vgk_scene_disable(void)</li>
+            <li>vgk_scene_set_descriptor(uint8_t n_objects, const SceneObjectParams *objects)</li>
+            <li>vgk_scene_set_object(uint8_t index, const SceneObjectParams *obj)</li>
+            <li>vgk_scene_set_object_count(uint8_t n_objects)</li>
+            <li>vgk_scene_get_result(SceneResult *result)</li>
+            <li>vgk_scene_object_meta_get(uint8_t index, SceneObjectMeta *meta)</li>
+            <li>vgk_scene_scrn_edges_get(...)</li>
+          </ul>
+
+          <h3>Occlusion and Ordering</h3>
+          <ul>
+            <li>Scene mode includes object-level depth ordering and AABB-based skip logic.</li>
+            <li>Disable scene occlusion sorting via <code>vgk_scene_no_occlusion_enable()</code> when needed.</li>
+            <li>Per-object hidden-line behavior still depends on each model's slot data.</li>
+          </ul>
+
+          <h3>Manual Scene Readback</h3>
+          <p>
+            For debug/analytics you can pull merged buffers directly:
+          </p>
+          <ul class="mono-list">
+            <li>vgk_scene_read_screen_coords(...)</li>
+            <li>vgk_scene_read_output_edges(...)</li>
+            <li>vgk_scene_read_clip_screen(...)</li>
+          </ul>
+        </section>
+
+        <section id="example-scene">
+          <h2>11. Multi-Object Example</h2>
+          <p>
+            High-level scene path using one-shot scene rendering helper.
+          </p>
+          <pre><code>#define F256LIB_IMPLEMENTATION
+#include "f256lib.h"
+
+#include "../include/geometry_kernel.h"
+#include "../include/3d_object.h"
+#include "../include/video.h"
+#include "../include/draw_line.h"
+
+static SceneObjectParams scene_objs[8] = {
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-400, .pos_y=0, .pos_z=400 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-400, .pos_y= 0, .pos_z=-400 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 400, .pos_y=0, .pos_z=-400 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 400, .pos_y= 0, .pos_z=400 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-800, .pos_y=-0, .pos_z=800 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-800, .pos_y= 0, .pos_z=-800 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 800, .pos_y=0, .pos_z=-800 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 800, .pos_y= 0, .pos_z=800 }
+};
+
+static uint8_t visible_layer = 1;
+void app_init(void) {
+    vs1053_clock_boost();
+    vs1053_plugin_load();     
+    vgk_plugin_init();
+    vs1053_dac_mute();
+    vs1053_dac_interrupt_disable(); // Decoder RAM is being used.  
+    vgk_projection_params_init(120, 160, 120, -64);
+    vgk_model_slot_init(&g_model_cube, 0);
+    vgk_cam_params_set(0, 0, 0, 0, 200, 1400);
+    vgk_hidden_line_enable();
+}
+
+void app_frame(uint16_t cam_x, int16_t cam_z, uint8_t cam_yaw) {
+    uint8_t draw_layer = (visible_layer == 1) ? 2 : 1;
+    dmaBitmapClear(draw_layer);
+    vgk_cam_params_set(0, cam_yaw, 0, cam_x, 200, cam_z);
+    vgk_reset();
+    vgk_trigger();
+    uint8_t status = vgk_wait_complete(10000);
+    if (status == 1) {
+        // retrieve and draw edges for the whole scene (all objects at once)
+        vgk_scene_scrn_edges_get(8, scene_objs, 0x0B, 0x0D, draw_layer);
+    } else if (status == 0){
+        textPrint("Error: Geometry kernel timeout.\n");
+    } 
+    video_wait_vblank();
+    bitmapSetVisible(draw_layer, true);
+    bitmapSetVisible(visible_layer, false);
+    visible_layer = draw_layer;
+}
+
+static uint8_t camera_orbit_angle;
+static uint16_t camera_x;
+static uint16_t camera_z;
+static uint8_t camera_yaw;
+
+static void camera_orbit(void) {
+
+    const int16_t radius = 1800;
+    const int16_t center_x = 0;
+    const int16_t center_z = 0;
+
+    camera_orbit_angle = (uint8_t)(camera_orbit_angle + 1u);
+    int16_t sinv = sin_table[camera_orbit_angle];
+    int16_t cosv = sin_table[(uint8_t)(camera_orbit_angle + 64u)];
+
+    // Q14 multiply: (sinv * radius) >> 14
+    int16_t dx = (int16_t)((mathSignedMultiply(cosv,radius)) >> 14);
+    int16_t dz = (int16_t)((mathSignedMultiply(sinv,radius)) >> 14);
+
+    camera_x = (int16_t)(center_x + dx);
+    camera_z = (int16_t)(center_z + dz);
+
+    // Face toward center: yaw = 64 - orbit_angle (sin/yaw mapping for this math setup)
+    camera_yaw = (uint8_t)(64u - camera_orbit_angle);
+}
+
+int main(int argc, char *argv[]) {
+    (void)argc;
+    (void)argv;
+
+    bool occlusion = true;
+    video_init();
+    app_init();
+    textGotoXY(0, 0);
+    textPrint("App Init Complete. \n");
+    // use scene API for multi-object demo
+    vgk_scene_enable();
+    vgk_scene_set_descriptor(8, scene_objs);
+    for (uint8_t loop = 0; loop < 4; loop++) {
+        textGotoXY(0, 0);
+        textPrint("Camera orbiting: Occlusion ");
+        textPrint(occlusion ? "ON " : "OFF");
+
+        if(!occlusion) {
+            vgk_scene_no_occlusion_enable();
+        } else {
+            vgk_scene_no_occlusion_disable();
+        }
+        for(uint16_t frame=0; frame < 256; frame++) {
+            if(frame % 2 == 0) {
+                camera_orbit(); // updates camera_x, camera_z, camera_yaw
+            }
+            app_frame(camera_x, camera_z, camera_yaw);
+        }
+        occlusion = !occlusion;
+    }
+    textPrint("\nDone! Press any key to exit.\n");
+    getchar();
+    return 0;
+}
+</code></pre>
+        </section>
+
+        <section id="api-reference">
+          <h2>12. API Reference</h2>
+
+          <h3>Initialization</h3>
+          <table>
+            <thead>
+              <tr><th>Function</th><th>Parameters</th><th>Returns</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>vgk_plugin_init</td><td>void</td><td>void</td><td>Initialize plugin status and trigger readiness</td></tr>
+              <tr><td>vgk_reset</td><td>void</td><td>void</td><td>Clear plugin status</td></tr>
+              <tr><td>vgk_yield_cb_set</td><td>callback function</td><td>void</td><td>Hook for polling loop service work</td></tr>
+              <tr><td>vgk_yield</td><td>void</td><td>void</td><td>Invoke callback once</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Projection And Camera</h3>
+          <table>
+            <thead>
+              <tr><th>Function</th><th>Parameters</th><th>Returns</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>vgk_projection_params_init</td><td>focal, half_w, half_h, near_z</td><td>void</td><td>Sets and enables perspective params</td></tr>
+              <tr><td>vgk_projection_enable</td><td>void</td><td>void</td><td>Enable projection + clipping</td></tr>
+              <tr><td>vgk_projection_disable</td><td>void</td><td>void</td><td>Disable projection path</td></tr>
+              <tr><td>vgk_cam_params_set</td><td>pitch,yaw,roll,pos_x,pos_y,pos_z</td><td>void</td><td>Global camera setup for subsequent triggers</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Model Slot Management</h3>
+          <table>
+            <thead>
+              <tr><th>Function</th><th>Parameters</th><th>Returns</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>vgk_model_slot_init</td><td>model, slot</td><td>void</td><td>Load vertices, edges, and hidden-line payload</td></tr>
+              <tr><td>vgk_model_vertices_init</td><td>model, slot</td><td>void</td><td>Vertex-only slot update</td></tr>
+              <tr><td>vgk_model_edges_init</td><td>model, slot</td><td>void</td><td>Edge-only slot update</td></tr>
+              <tr><td>vgk_model_hidden_line_init</td><td>model, slot</td><td>void</td><td>Face normals + adjacency payload only</td></tr>
+              <tr><td>vgk_model_load</td><td>slot</td><td>bool</td><td>Load slot into active DSP object buffers</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Object Transform And Execution</h3>
+          <table>
+            <thead>
+              <tr><th>Function</th><th>Parameters</th><th>Returns</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>vgk_obj_params_set</td><td>pitch,yaw,roll,scale,pos_x,pos_y,pos_z</td><td>void</td><td>Set full object transform</td></tr>
+              <tr><td>vgk_obj_angle_scale_set</td><td>pitch,yaw,roll,scale</td><td>void</td><td>Set orientation and scale only</td></tr>
+              <tr><td>setup_object_pos</td><td>pos_x,pos_y,pos_z</td><td>void</td><td>Set position only</td></tr>
+              <tr><td>vgk_trigger</td><td>void</td><td>void</td><td>Write trigger magic and start DSP pass</td></tr>
+              <tr><td>vgk_status</td><td>void</td><td>uint8_t</td><td>Poll status (idle/busy/complete/error class)</td></tr>
+              <tr><td>vgk_wait_complete</td><td>timeout_ms</td><td>uint8_t</td><td>1 done, 2 error, 0 timeout</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Result Readback</h3>
+          <table>
+            <thead>
+              <tr><th>Function</th><th>Parameters</th><th>Returns</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>vgk_scrn_edges_get</td><td>model, color</td><td>uint8_t</td><td>Legacy/basic edge readback</td></tr>
+              <tr><td>vgk_scrn_edges_with_depth_get</td><td>model, layer</td><td>uint8_t</td><td>Preferred path, depth-aware emit</td></tr>
+              <tr><td>vgk_plugin_capture_state</td><td>PluginCapture*</td><td>void</td><td>Diagnostic snapshot of kernel state</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Hidden-Line And Scene</h3>
+          <table>
+            <thead>
+              <tr><th>Function</th><th>Parameters</th><th>Returns</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>vgk_hidden_line_enable</td><td>void</td><td>void</td><td>Enable hidden-line mode</td></tr>
+              <tr><td>vgk_hidden_line_disable</td><td>void</td><td>void</td><td>Disable hidden-line mode</td></tr>
+              <tr><td>vgk_scene_enable / disable</td><td>void</td><td>void</td><td>Toggle scene mode</td></tr>
+              <tr><td>vgk_scene_no_occlusion_enable / disable</td><td>void</td><td>void</td><td>Toggle scene occlusion sorting/culling</td></tr>
+              <tr><td>vgk_scene_set_descriptor</td><td>n_objects, objects*</td><td>void</td><td>Write full scene descriptor</td></tr>
+              <tr><td>vgk_scene_set_object</td><td>index, object*</td><td>void</td><td>Update one object entry</td></tr>
+              <tr><td>vgk_scene_set_object_count</td><td>n_objects</td><td>void</td><td>Set object count only</td></tr>
+              <tr><td>vgk_scene_get_result</td><td>SceneResult*</td><td>void</td><td>Read scene totals</td></tr>
+              <tr><td>vgk_scene_object_meta_get</td><td>index, SceneObjectMeta*</td><td>void</td><td>Read per-object metadata</td></tr>
+              <tr><td>vgk_scene_read_screen_coords</td><td>sx_out, sy_out, max</td><td>uint16_t</td><td>Bulk screen coords</td></tr>
+              <tr><td>vgk_scene_read_output_edges</td><td>packed_out, flags_out, max</td><td>uint16_t</td><td>Bulk edge/flag buffers</td></tr>
+              <tr><td>vgk_scene_read_clip_screen</td><td>sx_out, sy_out, max</td><td>uint16_t</td><td>Bulk clip coords</td></tr>
+              <tr><td>vgk_scene_scrn_edges_get</td><td>n,obj,near,far,layer</td><td>uint8_t</td><td>All-in-one scene trigger/read/draw helper</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="type-reference">
+          <h2>13. Data Types</h2>
+
+          <h3>SceneObjectParams</h3>
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>slot</td><td>uint16_t</td><td>Model save slot index (0..7)</td></tr>
+              <tr><td>pitch, yaw, roll</td><td>uint8_t</td><td>Euler angles as 0..255 LUT indices</td></tr>
+              <tr><td>scale</td><td>uint8_t</td><td>Q7 scale (128 = 1.0)</td></tr>
+              <tr><td>pos_x, pos_y, pos_z</td><td>int16_t</td><td>World-space translation</td></tr>
+            </tbody>
+          </table>
+
+          <h3>SceneObjectMeta</h3>
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>vert_offset, edge_offset, clip_offset</td><td>uint16_t</td><td>Offsets into merged scene buffers</td></tr>
+              <tr><td>vert_count, edge_count</td><td>uint16_t</td><td>Per-object output counts</td></tr>
+              <tr><td>centroid_z</td><td>int16_t</td><td>Depth metric used for ordering</td></tr>
+              <tr><td>aabb_min_x, aabb_max_x, aabb_min_y, aabb_max_y</td><td>int16_t</td><td>Projected object bounds</td></tr>
+            </tbody>
+          </table>
+
+          <h3>SceneResult</h3>
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>total_verts</td><td>uint16_t</td><td>Total merged scene vertices</td></tr>
+              <tr><td>total_edges</td><td>uint16_t</td><td>Total merged output edges</td></tr>
+              <tr><td>total_clips</td><td>uint16_t</td><td>Total clip vertices emitted</td></tr>
+              <tr><td>n_objects</td><td>uint8_t</td><td>Object count processed</td></tr>
+            </tbody>
+          </table>
+
+          <h3>PluginCapture</h3>
+          <p>
+            Diagnostic capture struct for inspecting camera settings, matrix terms, projection settings,
+            edge lists, status, and clip buffers after a kernel run.
+          </p>
+        </section>
+
+        <section id="constants">
+          <h2>14. Constants Reference</h2>
+          <h3>Key Limits</h3>
+          <p>
+            The plugin capability is constrained by the limited on-chip memory and the serial memory read/write process.  The design
+            currently limits single objects to 32 vertices, 36 edges and 16 faces.   Of course many objects can be rendered to 
+            a frame by calling the plugin more than once or by using the scene feature.
+          </p>          
+          <ul class="mono-list">
+            <li>VGK_MAX_VERTICES = 32</li>
+            <li>VGK_MAX_EDGES = 36</li>
+            <li>VGK_MAX_FACES = 16</li>
+            <li>VGK_SCENE_MAX_OBJECTS = 8</li>
+            <li>VGK_SCENE_MAX_VERTS = 256</li>
+            <li>VGK_SCENE_MAX_EDGES = 288</li>
+            <li>VGK_SCENE_MAX_CLIPS = 64</li>
+          </ul>
+
+          <h3>Trigger And Status</h3>
+          <ul class="mono-list">
+            <li>VGK_TRIGGER_MAGIC = 0xCAFE</li>
+            <li>VGK_STATUS_IDLE = 0</li>
+            <li>VGK_STATUS_BUSY = 1</li>
+            <li>VGK_STATUS_DONE = 0xABCD</li>
+            <li>VGK_STATUS_SAVE_ERROR = 0xE201</li>
+            <li>VGK_STATUS_LOAD_ERROR = 0xE202</li>
+          </ul>
+
+          <h3>Edge Flags</h3>
+          <ul class="mono-list">
+            <li>VGK_EDGE_VISIBLE = 0x0001</li>
+            <li>VGK_EDGE_CLIP_V0 = 0x0002</li>
+            <li>VGK_EDGE_CLIP_V1 = 0x0004</li>
+            <li>VGK_EDGE_NEAR = 0x0008</li>
+            <li>VGK_EDGE_CULLED = 0x0000</li>
+          </ul>
+
+          <h3>Recommended Default Startup Values</h3>
+          <pre><code>// Good baseline for 320x240 center-based projection:
+focal  = 120
+half_w = 160
+half_h = 120
+near_z = -64
+camera = (pitch=0, yaw=0, roll=0, pos=(0,200,1400))</code></pre>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const sections = Array.from(document.querySelectorAll("main section[id]"));
+      const links = Array.from(document.querySelectorAll(".sidebar nav a"));
+      const byId = new Map(links.map(link => [link.getAttribute("href").slice(1), link]));
+
+      const setActive = (id) => {
+        links.forEach(link => link.classList.remove("active"));
+        const link = byId.get(id);
+        if (link) {
+          link.classList.add("active");
+        }
+      };
+
+      const observer = new IntersectionObserver((entries) => {
+        let topVisible = null;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+          if (!topVisible || entry.boundingClientRect.top < topVisible.boundingClientRect.top) {
+            topVisible = entry;
+          }
+        }
+        if (topVisible) {
+          setActive(topVisible.target.id);
+        }
+      }, {
+        rootMargin: "-10% 0px -75% 0px",
+        threshold: [0, 0.2, 0.5, 1]
+      });
+
+      sections.forEach(section => observer.observe(section));
+      if (sections.length > 0) {
+        setActive(sections[0].id);
+      }
+    })();
+  </script>
+</body>
+</html>

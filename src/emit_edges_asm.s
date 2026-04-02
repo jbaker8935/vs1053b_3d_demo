@@ -1,26 +1,6 @@
-; emit_edges_asm.s — Monolithic direct-emit of visible screen edges to F256 line-draw hardware.
+; emit_edges_asm.s — Assembly read of SCI and direct line-draw emit for screen edges.
 ;
-; get_screen_edges_full_asm performs ALL work previously split between the C wrapper
-; (get_screen_edges_with_depth) and the old get_screen_edges_asm /
-; get_screen_edges_nodepth_asm entry points:
-;
-;   1. Inline SCI burst-read of screen vertex coords → scr_x_lo/hi/y
-;   2. Read n_clip from DSP WRAM
-;   3. Fast-path check: flat color + no hidden-line + no clip + all edges output
-;      → direct model->edge_a/b lookup, skip edge buffer loading entirely
-;   4. Clip vertex coords burst-read → clip_x_lo/hi/y  (slow path only)
-;   5. Edge count / flags / packed-v0v1 burst-reads → g_edge_buf_flags/packed
-;   6. Two-pass near/far emit (inline hardware writes, no line list) OR
-;      single-pass emit when vgk_no_near_far_coloring is set
-;
-; SCI hardware ports (F256 VS1053b interface):
-;   $D700 = VS_SCI_CTRL  (CTRL_Start=0x01, CTRL_RWn=0x02, CTRL_Busy=0x80)
-;   $D701 = VS_SCI_ADDR
-;   $D702 = VS_SCI_DATA lo byte  ($D703 = hi byte)
-;
-; SCI register addresses (written to $D701 before a SCI access):
-;   SCI_WRAMADDR = 0x07
-;   SCI_WRAM     = 0x06
+; This is a WIP assembly implementation.  Many 6502 optimizations are left on the table.
 ;
 ; F256 line-draw hardware registers:
 ;   $D181 = color
@@ -37,32 +17,26 @@
 ;   bit 2 = CLIP_V1  (0x04)
 ;   bit 3 = NEAR     (0x08)
 ;
-; Vertex resolution for both the two-pass and single-pass loops:
-;   if v >= g_emit_n_input → offset-encoded clip: ci = v - n_input
-;   else if CLIP_Vx flag set → direct-encoded clip: ci = v
-;   else → original screen vertex
 
         .include "build/struct_offsets.inc"
 
 ; ---------------------------------------------------------------------------
-; Private staging variables — placed in regular BSS (absolute-addressed) to
-; avoid exhausting the scarce ZP region.  Accessed with 3-byte absolute LDA/STA
-; instead of 2-byte ZP — roughly 1 extra cycle each, fully acceptable.
+; Private staging variables 
 ; ---------------------------------------------------------------------------
         .section .bss
-zp_v0:          .space 1        ; v0 raw vertex index from packed edge word
-zp_v1:          .space 1        ; v1 raw vertex index from packed edge word
-zp_sx0_lo:      .space 1        ; resolved x0 low byte
-zp_sx0_hi:      .space 1        ; resolved x0 high byte
-zp_sy0:         .space 1        ; resolved y0 (low byte only; screen Y ≤ 255)
-zp_sx1_lo:      .space 1        ; resolved x1 low byte
-zp_sx1_hi:      .space 1        ; resolved x1 high byte
-zp_sy1:         .space 1        ; resolved y1
-zp_edge_color:  .space 1        ; selected color (near or far) — kept for compat
-zp_edge_flags:  .space 1        ; raw flags byte saved for CLIP_V0/V1 detection
-zp_edge_idx:    .space 1        ; edge index into g_edge_buf_flags (uint8_t index)
-zp_edge_byte2:  .space 1        ; edge index * 2 (byte offset into g_edge_buf_packed)
-zp_fifo_outer:  .space 1        ; FIFO wait outer counter (keeps X/Y free for vertex indexing)
+vgk_v0:          .space 1        ; v0 raw vertex index from packed edge word
+vgk_v1:          .space 1        ; v1 raw vertex index from packed edge word
+vgk_sx0_lo:      .space 1        ; resolved x0 low byte
+vgk_sx0_hi:      .space 1        ; resolved x0 high byte
+vgk_sy0:         .space 1        ; resolved y0 (low byte only; screen Y ≤ 255)
+vgk_sx1_lo:      .space 1        ; resolved x1 low byte
+vgk_sx1_hi:      .space 1        ; resolved x1 high byte
+vgk_sy1:         .space 1        ; resolved y1
+vgk_edge_color:  .space 1        ; selected color (near or far) 
+vgk_edge_flags:  .space 1        ; raw flags byte saved for CLIP_V0/V1 detection
+vgk_edge_idx:    .space 1        ; edge index into g_edge_buf_flags (uint8_t index)
+vgk_edge_byte2:  .space 1        ; edge index * 2 (byte offset into g_edge_buf_packed)
+vgk_fifo_outer:  .space 1        ; FIFO wait outer counter (keeps X/Y free for vertex indexing)
 
 ; ---------------------------------------------------------------------------
 ; Externals
@@ -107,14 +81,14 @@ zp_fifo_outer:  .space 1        ; FIFO wait outer counter (keeps X/Y free for ve
 ;   $D180=0, $D00A=0    (line-draw mode cleared)
 ;   g_line_fifo_timeouts incremented (16-bit) on any FIFO stall timeout
 ;
-; Calling convention (llvm-mos f256): single uint8_t arg in A; return in A.
+; llvm-mos C calling convention: single uint8_t arg in A; return in A.
 ; ===========================================================================
         .globl vgk_scrn_edges_get_asm
 
 vgk_scrn_edges_get_asm:
 
 ; ---------------------------------------------------------------------------
-; Block 1: Compute layer control byte (layer<<2)|1 and store.
+; Compute layer control byte (layer<<2)|1 and store.
 ; ---------------------------------------------------------------------------
         asl
         asl
@@ -122,9 +96,11 @@ vgk_scrn_edges_get_asm:
         sta     g_emit_layer_ctrl
 
 ; ---------------------------------------------------------------------------
-; Block 2: Inline SCI burst-read of screen vertex coords.
+; Inline SCI burst-read of screen vertex coords.
 ;   Set WRAMADDR = VGK_SCREEN_COORDS (0x36C0)
 ;   Then loop g_emit_n_input times reading [sx_lo, sx_hi, sy_lo] per vertex.
+;  Screen coords are written to scr_x_lo[], scr_x_hi[], scr_y[] as interleaved lo/hi/lo bytes. 
+;  Clipping attributes are checked later to determine if screen vertex is overridden by clip vertex coords.
 ; ---------------------------------------------------------------------------
 
         ; Set WRAMADDR = 0x36C0
@@ -174,7 +150,7 @@ gsf_sci_sy_wait:
         bne     gsf_scrn_loop
 
 ; ---------------------------------------------------------------------------
-; Block 3: Read n_clip from DSP WRAM.
+; Read n_clip from WRAM.
 ;   VGK_N_CLIP_VERTS = 0x3770
 ; ---------------------------------------------------------------------------
         lda     #$07                    ; SCI_WRAMADDR
@@ -206,10 +182,14 @@ gsf_nclip_ok:
         sta     g_emit_n_clip
 
 ; ---------------------------------------------------------------------------
-; Block 4: Fast path check.
+; Fast path check.
 ;   Conditions: no_near_far_coloring != 0, vgk_hidden_line_active == 0,
 ;               g_emit_n_clip == 0, n_out == g_emit_edge_count.
 ;   If all pass -> JMP gsf_fast_path.
+; Fast path: all edges are visible and can be emitted directly without clipping or hidden-line checks.
+;   Allows using the CPU object edge definitions without having to read edges from SCI.
+;   Useful for most arcade wireframe animations that do not use hidden lines
+;   Improves frame rate.
 ; ---------------------------------------------------------------------------
         lda     vgk_no_near_far_coloring
         beq     gsf_skip_fast           ; not set -> can't use fast path
@@ -250,8 +230,8 @@ gsf_nout_rd_wait:
 gsf_skip_fast:
 
 ; ---------------------------------------------------------------------------
-; Block 5: Clip vertex coords (if n_clip > 0).
-;   VGK_CLIP_SCREEN = 0x3700
+; Clip vertex coords (if n_clip > 0).
+;   Reads in clip vertex coordinates which will replace clipped edge vertices
 ; ---------------------------------------------------------------------------
         lda     g_emit_n_clip
         beq     gsf_no_clip
@@ -303,17 +283,17 @@ gsf_sci_cy_wait:
 gsf_no_clip:
 
 ; ---------------------------------------------------------------------------
-; Block 6: Edge data burst-reads.
+; Edge data burst-reads for cases where Edge data needs to be retrieved
 ;
-;   6a: Read VGK_N_OUTPUT_EDGES -> update g_emit_edge_count.
+;   Read VGK_N_OUTPUT_EDGES -> update g_emit_edge_count.
 ;       VGK_N_OUTPUT_EDGES = 0x3720
-;   6b: Burst-read VGK_OUTPUT_EDGE_FLAGS (0x3721, packed 2 flags/word)
+;   Burst-read VGK_OUTPUT_EDGE_FLAGS (0x3721, packed 2 flags/word)
 ;       -> unpack to g_edge_buf_flags[] (one byte per edge).
-;   6c: Burst-read VGK_OUTPUT_EDGE_PACKED (0x3733)
+;   Burst-read VGK_OUTPUT_EDGE_PACKED (0x3733)
 ;       -> g_edge_buf_packed[] as raw uint16_t LE pairs.
 ; ---------------------------------------------------------------------------
 
-        ; 6a: read N_OUTPUT_EDGES
+        ; read N_OUTPUT_EDGES
         lda     #$07
         sta     $D701
         lda     #$20                    ; lo of 0x3720
@@ -338,12 +318,12 @@ gsf_nout2_rd_wait:
         lda     $D702
         sta     g_emit_edge_count
 
-        ; 6b: read output edge flags -> g_edge_buf_flags[]
+        ; read output edge flags -> g_edge_buf_flags[]
         ;     Flags are packed 2 per WRAM word: lo byte = even-index edge, hi byte = odd.
         ;     VGK_OUTPUT_EDGE_FLAGS = 0x3721
         lda     #$07
         sta     $D701
-        lda     #$21                    ; lo of 0x3721
+        lda     #$21                    
         sta     $D702
         lda     #$37
         sta     $D703
@@ -361,10 +341,10 @@ gsf_flags_addr_wait:
         lda     g_emit_edge_count
         clc
         adc     #1
-        lsr                             ; A = n_flag_words
-        tay                             ; Y = word-loop count (countdown)
-        beq     gsf_flags_done          ; 0 edges -> skip
-        ldx     #$00                    ; X = byte index into g_edge_buf_flags
+        lsr                             
+        tay                             
+        beq     gsf_flags_done          
+        ldx     #$00                    
 
 gsf_flags_loop:
         lda     #$03
@@ -373,12 +353,12 @@ gsf_flags_loop:
 gsf_sci_flags_wait:
         lda     $D700
         bmi     gsf_sci_flags_wait
-        lda     $D702                   ; even-index edge flags (lo byte)
+        lda     $D702                   
         sta     g_edge_buf_flags, x
         inx
         cpx     g_emit_edge_count
-        bcs     gsf_flags_done          ; odd slot would be beyond edge count
-        lda     $D703                   ; odd-index edge flags (hi byte)
+        bcs     gsf_flags_done          
+        lda     $D703                   
         sta     g_edge_buf_flags, x
         inx
         dey
@@ -386,12 +366,12 @@ gsf_sci_flags_wait:
 
 gsf_flags_done:
 
-        ; 6c: burst-read packed v0v1 -> g_edge_buf_packed[]
+        ; burst-read packed v0v1 -> g_edge_buf_packed[]
         ;     VGK_OUTPUT_EDGE_PACKED = 0x3733
         ;     Each WRAM word: lo byte = v0, hi byte = v1.
         lda     #$07
         sta     $D701
-        lda     #$33                    ; lo of 0x3733
+        lda     #$33                    
         sta     $D702
         lda     #$37
         sta     $D703
@@ -407,7 +387,7 @@ gsf_packed_addr_wait:
 
         ldy     g_emit_edge_count
         beq     gsf_packed_done
-        ldx     #$00                    ; X = byte offset (2 bytes per edge)
+        ldx     #$00                    
 
 gsf_packed_loop:
         lda     #$03
@@ -416,9 +396,9 @@ gsf_packed_loop:
 gsf_sci_packed_wait:
         lda     $D700
         bmi     gsf_sci_packed_wait
-        lda     $D702                   ; v0 (lo byte of packed WRAM word)
+        lda     $D702                   
         sta     g_edge_buf_packed, x
-        lda     $D703                   ; v1 (hi byte of packed WRAM word)
+        lda     $D703                   
         sta     g_edge_buf_packed + 1, x
         inx
         inx
@@ -428,7 +408,11 @@ gsf_sci_packed_wait:
 gsf_packed_done:
 
 ; ---------------------------------------------------------------------------
-; Block 7: Branch to near/far two-pass or single-pass.
+; Branch to near/far two-pass or single-pass.
+;    draw far edges first in case near and far edges overlap
+;    could be skipped when hidden lines are enabled but will have some
+;    drawing inconsistency at vertex where far and near edges meet.
+;    likely overkill processing tbh.
 ; ---------------------------------------------------------------------------
         lda     vgk_no_near_far_coloring
         beq     gsf_do_twopass          ; zero -> two-pass near/far
@@ -436,7 +420,7 @@ gsf_packed_done:
 gsf_do_twopass:
 
 ; ===========================================================================
-; Block 8: Two-pass near/far direct-emit.
+; Two-pass near/far direct-emit.
 ;
 ; Far pass first (NEAR flag clear), then near pass (NEAR flag set).
 ; Each pass iterates g_edge_buf_flags/packed from index 0 to edge_count-1.
@@ -445,8 +429,8 @@ gsf_do_twopass:
 ; Register usage:
 ;   Y  = edge index (0..edge_count-1)
 ;   X  = vertex index for scr_*/clip_* lookups
-;   BSS: zp_edge_flags, zp_v0, zp_v1, zp_sx0_lo/hi, zp_sy0,
-;        zp_sx1_lo/hi, zp_sy1, zp_fifo_outer, zp_edge_byte2
+;   BSS: vgk_edge_flags, vgk_v0, vgk_v1, vgk_sx0_lo/hi, vgk_sy0,
+;        vgk_sx1_lo/hi, vgk_sy1, vgk_fifo_outer, vgk_edge_byte2
 ; ===========================================================================
 
         lda     g_emit_edge_count
@@ -457,48 +441,46 @@ gsf_twopass_has_edges:
         lda     #$01
         sta     $D00A                   ; enter line-draw mode
         lda     g_emit_layer_ctrl
-        sta     $D180                   ; pre-arm for first line
+        sta     $D180                   
 
         ; ----- FAR PASS -----
-        ldy     #$00                    ; Y = edge index
-        stz     zp_edge_byte2           ; byte offset into g_edge_buf_packed (index*2)
+        ldy     #$00                    
+        stz     vgk_edge_byte2           
 
 gsf_far_edge_loop:
         lda     g_edge_buf_flags, y
-        sta     zp_edge_flags
+        sta     vgk_edge_flags
 
-        ; Advance packed byte offset BEFORE any skip so both counters stay in sync
-        lda     zp_edge_byte2
+        lda     vgk_edge_byte2
         clc
         adc     #2
-        sta     zp_edge_byte2
+        sta     vgk_edge_byte2
 
-        ; Test VISIBLE (bit 0) — reload flags; A holds byte2 after the adc above
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         lsr                             ; C = VISIBLE
         bcs     gsf_far_visible
         jmp     gsf_far_next_edge       ; not visible -> skip
 gsf_far_visible:
 
-        ; Skip NEAR edges in far pass (bit 3 of raw flags)
-        lda     zp_edge_flags
+        ; Skip NEAR edges in far pass
+        lda     vgk_edge_flags
         and     #$08
-        beq     gsf_far_is_far          ; NEAR clear -> it's a far edge, process
-        jmp     gsf_far_next_edge       ; NEAR set -> reserve for near pass
+        beq     gsf_far_is_far          
+        jmp     gsf_far_next_edge       
 gsf_far_is_far:
 
-        ; Load v0/v1 from g_edge_buf_packed[zp_edge_byte2 - 2]
-        lda     zp_edge_byte2
+        ; Load v0/v1 from g_edge_buf_packed[vgk_edge_byte2 - 2]
+        lda     vgk_edge_byte2
         sec
         sbc     #2
         tax
-        lda     g_edge_buf_packed, x    ; v0
-        sta     zp_v0
-        lda     g_edge_buf_packed + 1, x ; v1
-        sta     zp_v1
+        lda     g_edge_buf_packed, x    
+        sta     vgk_v0
+        lda     g_edge_buf_packed + 1, x 
+        sta     vgk_v1
 
         ; Resolve V0
-        ldx     zp_v0
+        ldx     vgk_v0
         cpx     g_emit_n_input
         bcc     gsf_far_v0_lt_ninput
         ; Offset-encoded clip: ci = v0 - n_input
@@ -509,41 +491,41 @@ gsf_far_is_far:
         cpx     g_emit_n_clip
         bcs     gsf_far_v0_zero
         lda     clip_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     clip_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     clip_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
         bra     gsf_far_v0_done
 gsf_far_v0_zero:
-        stz     zp_sx0_lo
-        stz     zp_sx0_hi
-        stz     zp_sy0
+        stz     vgk_sx0_lo
+        stz     vgk_sx0_hi
+        stz     vgk_sy0
         bra     gsf_far_v0_done
 gsf_far_v0_lt_ninput:
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         and     #$02                    ; CLIP_V0
         beq     gsf_far_v0_original
         cpx     g_emit_n_clip
         bcs     gsf_far_v0_zero
         lda     clip_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     clip_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     clip_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
         bra     gsf_far_v0_done
 gsf_far_v0_original:
         lda     scr_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     scr_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     scr_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
 gsf_far_v0_done:
 
         ; Resolve V1
-        ldx     zp_v1
+        ldx     vgk_v1
         cpx     g_emit_n_input
         bcc     gsf_far_v1_lt_ninput
         txa
@@ -553,51 +535,51 @@ gsf_far_v0_done:
         cpx     g_emit_n_clip
         bcs     gsf_far_v1_zero
         lda     clip_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     clip_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     clip_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
         bra     gsf_far_v1_done
 gsf_far_v1_zero:
-        stz     zp_sx1_lo
-        stz     zp_sx1_hi
-        stz     zp_sy1
+        stz     vgk_sx1_lo
+        stz     vgk_sx1_hi
+        stz     vgk_sy1
         bra     gsf_far_v1_done
 gsf_far_v1_lt_ninput:
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         and     #$04                    ; CLIP_V1
         beq     gsf_far_v1_original
         cpx     g_emit_n_clip
         bcs     gsf_far_v1_zero
         lda     clip_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     clip_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     clip_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
         bra     gsf_far_v1_done
 gsf_far_v1_original:
         lda     scr_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     scr_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     scr_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
 gsf_far_v1_done:
 
         ; Emit far edge
-        lda     zp_sx0_lo
+        lda     vgk_sx0_lo
         sta     $D182
-        lda     zp_sx0_hi
+        lda     vgk_sx0_hi
         sta     $D183
-        lda     zp_sx1_lo
+        lda     vgk_sx1_lo
         sta     $D184
-        lda     zp_sx1_hi
+        lda     vgk_sx1_hi
         sta     $D185
-        lda     zp_sy0
+        lda     vgk_sy0
         sta     $D186
-        lda     zp_sy1
+        lda     vgk_sy1
         sta     $D187
         lda     g_emit_far_color
         sta     $D181
@@ -605,9 +587,8 @@ gsf_far_v1_done:
         ora     #$02
         sta     $D180
 
-        ; FIFO wait — X free (last vertex index no longer needed); Y preserved as edge index
         lda     #$40
-        sta     zp_fifo_outer
+        sta     vgk_fifo_outer
 gsf_far_fifo_outer:
         ldx     #$ff
 gsf_far_fifo_inner:
@@ -616,7 +597,7 @@ gsf_far_fifo_inner:
         beq     gsf_far_fifo_ok
         dex
         bne     gsf_far_fifo_inner
-        dec     zp_fifo_outer
+        dec     vgk_fifo_outer
         bne     gsf_far_fifo_outer
         ; Timeout
         inc     g_line_fifo_timeouts
@@ -636,51 +617,48 @@ gsf_far_fifo_ok:
 gsf_far_next_edge:
         iny
         cpy     g_emit_edge_count
-        beq     gsf_far_pass_done       ; all far edges done -> fall to near pass
+        beq     gsf_far_pass_done       
         jmp     gsf_far_edge_loop
 gsf_far_pass_done:
 
         ; ----- NEAR PASS -----
         lda     g_emit_layer_ctrl
-        sta     $D180                   ; re-arm for first near line
+        sta     $D180                   
         ldy     #$00
-        stz     zp_edge_byte2
+        stz     vgk_edge_byte2
 
 gsf_near_edge_loop:
         lda     g_edge_buf_flags, y
-        sta     zp_edge_flags
+        sta     vgk_edge_flags
 
-        lda     zp_edge_byte2
+        lda     vgk_edge_byte2
         clc
         adc     #2
-        sta     zp_edge_byte2
+        sta     vgk_edge_byte2
 
-        ; Test VISIBLE — reload flags; A holds byte2 after the adc above
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         lsr                             ; C = VISIBLE
         bcs     gsf_near_visible
         jmp     gsf_near_next_edge      ; not visible -> skip
 gsf_near_visible:
 
-        ; Only process NEAR edges in near pass
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         and     #$08
-        bne     gsf_near_is_near        ; NEAR set -> process
-        jmp     gsf_near_next_edge      ; NEAR not set -> skip in near pass
+        bne     gsf_near_is_near        
+        jmp     gsf_near_next_edge      
 gsf_near_is_near:
 
-        ; Load v0/v1
-        lda     zp_edge_byte2
+        lda     vgk_edge_byte2
         sec
         sbc     #2
         tax
         lda     g_edge_buf_packed, x
-        sta     zp_v0
+        sta     vgk_v0
         lda     g_edge_buf_packed + 1, x
-        sta     zp_v1
+        sta     vgk_v1
 
         ; Resolve V0
-        ldx     zp_v0
+        ldx     vgk_v0
         cpx     g_emit_n_input
         bcc     gsf_near_v0_lt_ninput
         txa
@@ -690,41 +668,41 @@ gsf_near_is_near:
         cpx     g_emit_n_clip
         bcs     gsf_near_v0_zero
         lda     clip_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     clip_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     clip_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
         bra     gsf_near_v0_done
 gsf_near_v0_zero:
-        stz     zp_sx0_lo
-        stz     zp_sx0_hi
-        stz     zp_sy0
+        stz     vgk_sx0_lo
+        stz     vgk_sx0_hi
+        stz     vgk_sy0
         bra     gsf_near_v0_done
 gsf_near_v0_lt_ninput:
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         and     #$02
         beq     gsf_near_v0_original
         cpx     g_emit_n_clip
         bcs     gsf_near_v0_zero
         lda     clip_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     clip_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     clip_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
         bra     gsf_near_v0_done
 gsf_near_v0_original:
         lda     scr_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     scr_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     scr_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
 gsf_near_v0_done:
 
         ; Resolve V1
-        ldx     zp_v1
+        ldx     vgk_v1
         cpx     g_emit_n_input
         bcc     gsf_near_v1_lt_ninput
         txa
@@ -734,51 +712,51 @@ gsf_near_v0_done:
         cpx     g_emit_n_clip
         bcs     gsf_near_v1_zero
         lda     clip_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     clip_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     clip_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
         bra     gsf_near_v1_done
 gsf_near_v1_zero:
-        stz     zp_sx1_lo
-        stz     zp_sx1_hi
-        stz     zp_sy1
+        stz     vgk_sx1_lo
+        stz     vgk_sx1_hi
+        stz     vgk_sy1
         bra     gsf_near_v1_done
 gsf_near_v1_lt_ninput:
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         and     #$04
         beq     gsf_near_v1_original
         cpx     g_emit_n_clip
         bcs     gsf_near_v1_zero
         lda     clip_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     clip_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     clip_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
         bra     gsf_near_v1_done
 gsf_near_v1_original:
         lda     scr_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     scr_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     scr_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
 gsf_near_v1_done:
 
         ; Emit near edge
-        lda     zp_sx0_lo
+        lda     vgk_sx0_lo
         sta     $D182
-        lda     zp_sx0_hi
+        lda     vgk_sx0_hi
         sta     $D183
-        lda     zp_sx1_lo
+        lda     vgk_sx1_lo
         sta     $D184
-        lda     zp_sx1_hi
+        lda     vgk_sx1_hi
         sta     $D185
-        lda     zp_sy0
+        lda     vgk_sy0
         sta     $D186
-        lda     zp_sy1
+        lda     vgk_sy1
         sta     $D187
         lda     g_emit_near_color
         sta     $D181
@@ -786,9 +764,8 @@ gsf_near_v1_done:
         ora     #$02
         sta     $D180
 
-        ; FIFO wait — X free (last vertex index no longer needed); Y preserved as edge index
         lda     #$40
-        sta     zp_fifo_outer
+        sta     vgk_fifo_outer
 gsf_near_fifo_outer:
         ldx     #$ff
 gsf_near_fifo_inner:
@@ -797,7 +774,7 @@ gsf_near_fifo_inner:
         beq     gsf_near_fifo_ok
         dex
         bne     gsf_near_fifo_inner
-        dec     zp_fifo_outer
+        dec     vgk_fifo_outer
         bne     gsf_near_fifo_outer
         ; Timeout
         inc     g_line_fifo_timeouts
@@ -828,10 +805,8 @@ gsf_twopass_done:
         rts
 
 ; ===========================================================================
-; Block 9: Single-pass emit (vgk_no_near_far_coloring set).
+; Single-pass emit (vgk_no_near_far_coloring set).
 ;
-; Identical vertex-resolve + emit logic to the two-pass loops above, but:
-;   color is always g_emit_near_color (no NEAR flag test)
 ;   single pass over all VISIBLE edges regardless of NEAR flag
 ; ===========================================================================
 gsf_single_pass:
@@ -845,35 +820,33 @@ gsf_single_has_edges:
         lda     g_emit_layer_ctrl
         sta     $D180
 
-        stz     zp_edge_idx
-        stz     zp_edge_byte2
+        stz     vgk_edge_idx
+        stz     vgk_edge_byte2
 
 gsf_single_edge_loop:
-        ldx     zp_edge_byte2
+        ldx     vgk_edge_byte2
         lda     g_edge_buf_packed, x
-        sta     zp_v0
+        sta     vgk_v0
         lda     g_edge_buf_packed + 1, x
-        sta     zp_v1
+        sta     vgk_v1
 
-        ldx     zp_edge_idx
+        ldx     vgk_edge_idx
         lda     g_edge_buf_flags, x
-        sta     zp_edge_flags
+        sta     vgk_edge_flags
 
-        inc     zp_edge_idx
+        inc     vgk_edge_idx
         clc
-        lda     zp_edge_byte2
+        lda     vgk_edge_byte2
         adc     #2
-        sta     zp_edge_byte2
+        sta     vgk_edge_byte2
 
-        ; Test VISIBLE — reload flags; A holds byte2 after the adc above
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         lsr                             ; C = VISIBLE
         bcs     gsf_single_visible
         jmp     gsf_single_next_edge
 gsf_single_visible:
 
-        ; Resolve V0
-        ldx     zp_v0
+        ldx     vgk_v0
         cpx     g_emit_n_input
         bcc     gsf_s_v0_lt
         txa
@@ -883,41 +856,40 @@ gsf_single_visible:
         cpx     g_emit_n_clip
         bcs     gsf_s_v0_zero
         lda     clip_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     clip_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     clip_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
         bra     gsf_s_v0_done
 gsf_s_v0_zero:
-        stz     zp_sx0_lo
-        stz     zp_sx0_hi
-        stz     zp_sy0
+        stz     vgk_sx0_lo
+        stz     vgk_sx0_hi
+        stz     vgk_sy0
         bra     gsf_s_v0_done
 gsf_s_v0_lt:
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         and     #$02
         beq     gsf_s_v0_orig
         cpx     g_emit_n_clip
         bcs     gsf_s_v0_zero
         lda     clip_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     clip_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     clip_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
         bra     gsf_s_v0_done
 gsf_s_v0_orig:
         lda     scr_x_lo, x
-        sta     zp_sx0_lo
+        sta     vgk_sx0_lo
         lda     scr_x_hi, x
-        sta     zp_sx0_hi
+        sta     vgk_sx0_hi
         lda     scr_y, x
-        sta     zp_sy0
+        sta     vgk_sy0
 gsf_s_v0_done:
 
-        ; Resolve V1
-        ldx     zp_v1
+        ldx     vgk_v1
         cpx     g_emit_n_input
         bcc     gsf_s_v1_lt
         txa
@@ -927,51 +899,50 @@ gsf_s_v0_done:
         cpx     g_emit_n_clip
         bcs     gsf_s_v1_zero
         lda     clip_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     clip_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     clip_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
         bra     gsf_s_v1_done
 gsf_s_v1_zero:
-        stz     zp_sx1_lo
-        stz     zp_sx1_hi
-        stz     zp_sy1
+        stz     vgk_sx1_lo
+        stz     vgk_sx1_hi
+        stz     vgk_sy1
         bra     gsf_s_v1_done
 gsf_s_v1_lt:
-        lda     zp_edge_flags
+        lda     vgk_edge_flags
         and     #$04
         beq     gsf_s_v1_orig
         cpx     g_emit_n_clip
         bcs     gsf_s_v1_zero
         lda     clip_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     clip_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     clip_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
         bra     gsf_s_v1_done
 gsf_s_v1_orig:
         lda     scr_x_lo, x
-        sta     zp_sx1_lo
+        sta     vgk_sx1_lo
         lda     scr_x_hi, x
-        sta     zp_sx1_hi
+        sta     vgk_sx1_hi
         lda     scr_y, x
-        sta     zp_sy1
+        sta     vgk_sy1
 gsf_s_v1_done:
 
-        ; Emit
-        lda     zp_sx0_lo
+        lda     vgk_sx0_lo
         sta     $D182
-        lda     zp_sx0_hi
+        lda     vgk_sx0_hi
         sta     $D183
-        lda     zp_sx1_lo
+        lda     vgk_sx1_lo
         sta     $D184
-        lda     zp_sx1_hi
+        lda     vgk_sx1_hi
         sta     $D185
-        lda     zp_sy0
+        lda     vgk_sy0
         sta     $D186
-        lda     zp_sy1
+        lda     vgk_sy1
         sta     $D187
         lda     g_emit_near_color
         sta     $D181
@@ -979,9 +950,8 @@ gsf_s_v1_done:
         ora     #$02
         sta     $D180
 
-        ; FIFO wait — X free (last vertex index no longer needed)
         lda     #$40
-        sta     zp_fifo_outer
+        sta     vgk_fifo_outer
 gsf_s_fifo_outer:
         ldx     #$ff
 gsf_s_fifo_inner:
@@ -990,7 +960,7 @@ gsf_s_fifo_inner:
         beq     gsf_s_fifo_ok
         dex
         bne     gsf_s_fifo_inner
-        dec     zp_fifo_outer
+        dec     vgk_fifo_outer
         bne     gsf_s_fifo_outer
         ; Timeout
         inc     g_line_fifo_timeouts
@@ -1009,7 +979,7 @@ gsf_s_fifo_ok:
 
 gsf_single_next_edge:
         dec     g_emit_edge_count
-        beq     gsf_single_done         ; count hit 0 -> exit
+        beq     gsf_single_done 
         jmp     gsf_single_edge_loop
 
 gsf_single_done:
@@ -1020,18 +990,16 @@ gsf_single_done:
         rts
 
 ; ===========================================================================
-; Block 10: Fast path
+; Fast path
 ;   (vgk_no_near_far_coloring + no hidden-line + no clip + all edges output)
 ;
-; Reads vertex indices directly from model->edge_a/b via ZP indirect addressing.
-; g_emit_edge_a and g_emit_edge_b are ZP pointers (set by C wrapper).
-; All edges are assumed visible -- fast-path eligibility check (Block 4) confirmed
-; that the DSP output count equals g_emit_edge_count.
+; Reads vertex indices directly from model
+; All edges are assumed visible 
 ;
 ; Register usage:
 ;   Y  = edge index (0..edge_count-1)  -- decremented via g_emit_edge_count
 ;   X  = vertex index for scr_* lookups
-;   BSS: zp_fifo_outer (keeps X/Y free for vertex indexing inside FIFO wait)
+;   BSS: vgk_fifo_outer (keeps X/Y free for vertex indexing inside FIFO wait)
 ; ===========================================================================
 gsf_fast_path:
         lda     g_emit_edge_count
@@ -1047,7 +1015,6 @@ gsf_fast_has_edges:
         ldy     #$00
 
 gsf_fast_edge_loop:
-        ; v0 = edge_a[Y]
         lda     (g_emit_edge_a), y
         tax                             ; X = v0
         lda     scr_x_lo, x
@@ -1057,7 +1024,6 @@ gsf_fast_edge_loop:
         lda     scr_y, x
         sta     $D186                   ; y0
 
-        ; v1 = edge_b[Y]
         lda     (g_emit_edge_b), y
         tax                             ; X = v1
         lda     scr_x_lo, x
@@ -1073,9 +1039,8 @@ gsf_fast_edge_loop:
         ora     #$02
         sta     $D180                   ; clock in
 
-        ; FIFO wait — X free (last vertex index no longer needed); Y preserved as edge index
         lda     #$40
-        sta     zp_fifo_outer
+        sta     vgk_fifo_outer
 gsf_fast_fifo_outer:
         ldx     #$ff
 gsf_fast_fifo_inner:
@@ -1084,9 +1049,9 @@ gsf_fast_fifo_inner:
         beq     gsf_fast_fifo_ok
         dex
         bne     gsf_fast_fifo_inner
-        dec     zp_fifo_outer
+        dec     vgk_fifo_outer
         bne     gsf_fast_fifo_outer
-        ; Timeout
+
         inc     g_line_fifo_timeouts
         bne     gsf_fast_fifo_bail
         inc     g_line_fifo_timeouts + 1
@@ -1099,12 +1064,12 @@ gsf_fast_fifo_bail:
 gsf_fast_fifo_ok:
         inc     g_emit_visible_count
         lda     g_emit_layer_ctrl
-        sta     $D180                   ; re-arm for next line
+        sta     $D180                   
 
         iny
         dec     g_emit_edge_count
-        beq     gsf_fast_loop_done      ; count hit 0 -> all done
-        jmp     gsf_fast_edge_loop      ; more edges
+        beq     gsf_fast_loop_done
+        jmp     gsf_fast_edge_loop
 gsf_fast_loop_done:
 
 gsf_fast_done:

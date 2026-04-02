@@ -2,6 +2,10 @@
 #include "f256lib.h"
 #include "../include/timer.h"
 
+/* Timer functions for Timer T0 to support both VGM file variable waits 
+ * and a fixed timing interval used for frame based processing.
+ */
+
 /* Stored in dot-clock ticks so that variable-rate T0 periods can be
  * subtracted directly without a unit conversion at service time.
  * timer_t0_alarm_set() still accepts T0_TICK_FREQ-Hz tick counts; it converts on entry.
@@ -17,12 +21,9 @@ static uint32_t g_last_period = T0_TICK_PERIOD_TICKS;
 /*              alarms and clear T0_PEND.                                 */
 static bool g_fixed_rate = true;
 
-/* Watchdog counter for T0_PEND miss recovery.
- * Incremented on every timer_t0_is_done() call that sees PEND=0 in variable-rate
- * mode.  When it wraps (every 256 polls) the counter is read as a fallback
- * in case T0_PEND failed to assert (hardware bug, ~1 in 100,000 events).
- * Reset to 0 on each timer_set_period() arm so T0_PEND firing normally
- * (before 256 polls accumulate) keeps the overhead at exactly 1 PEEK/poll. */
+/* Watchdog counter for timer T0 pending checks
+ * logic periodially checks counter directly to test for expired timer periods
+ */
 static uint8_t g_pend_watchdog = 0u;
 
 
@@ -45,13 +46,7 @@ static void timer_t0_pend_clear(void)
 }
 
 static void timer_t0_service(void) {
-	/* In variable-rate (VGM) mode the VGM library owns T0_PEND.
-	 * vgm_service() must be the one to consume it.  If we clear it here
-	 * first, vgm_service() will never see the fire and will wait forever:
-	 * with T0_CMP_CTR=0 (no RECLEAR) T0 only re-matches after a full
-	 * 24-bit wrap (~666 ms), causing the lengthy pauses.  Bail out and let
-	 * vgm_service() handle everything via timer_tick_elapsed(). */
-	if (!g_fixed_rate) {
+	if (!g_fixed_rate) {  // In variable-rate (vgm) mode vgm_service handle T0_PEND
 		return;
 	}
 	if (!timer_t0_is_done()) {
@@ -65,10 +60,7 @@ static void timer_t0_service(void) {
 
 void timer_t0_set()
 {
-	/* Restore fixed-rate mode.  Called by vgm_close() to hand T0
-	 * back to the general alarm subsystem after VGM playback ends.
-	 * Uses RECLEAR mode for the tick so timer_service() sees
-	 * periodic T0_PEND flags without needing to re-arm each time. */
+	/* Restore fixed-rate mode. */
 	g_last_period = T0_TICK_PERIOD_TICKS;
 	g_fixed_rate  = true;
 	timer_t0_irq_mask();
@@ -123,22 +115,9 @@ uint32_t timer_t0_read_consistent(void)
     // return ((uint32_t)h1 << 16) | ((uint32_t)m << 8) | (uint32_t)l; 
 }
 
-/* --- New public API -------------------------------------------------- */
-
 void timer_period_set(uint32_t ticks)
 {
-	/* Program T0 for a one-shot variable-rate period.
-	 *   1. CTR_CLEAR        → counter to 0
-	 *   2. CMP_L/M/H        → load compare value
-	 *   3. CMP_CTR = RELOAD → latch compare bytes
-	 *   4. CMP_CTR = 0      → single-fire, no reclear/reload
-	 *   5. CTR_CLEAR         → counter to 0 (redundant)
-	 *   6. CTR_INTEN|UPDOWN|ENABLE → start counting with interrupt enable
-	 *
-	 * Keep CTR_INTEN set so Timer0 compare events also update INT_PENDING_0
-	 * bit 4. This is useful for diagnostics and keeps behavior consistent
-	 * with fixed-rate mode. Timer0 remains IRQ-masked via INT_MASK_0.
- */
+
 	ticks &= (uint32_t)T0_MASK_TICKS;
 	if (ticks == 0u) {
 		ticks = 1u;
@@ -188,17 +167,13 @@ bool timer_t0_is_done()
 		return false;
 	}
 
-#if 1
 	/* Variable-rate mode: Once every 256 polls, verify via counter read. */
 	if (++g_pend_watchdog != 0u) {
 		return false;
 	}
 	/* Watchdog fired (poll 256, 512, ...): verify via counter. */
 	return timer_t0_read_consistent() >= g_last_period;
-#else
-	/* Watchdog muted: do not perform the counter fallback. */
-	return false;
-#endif
+
 }
 
 uint32_t timer_t0_alarm_ticks_get(timer_alarm_id_t alarm) {

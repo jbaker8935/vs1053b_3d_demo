@@ -481,18 +481,18 @@ static void demo6_enter(void) {
     g_boing_vel_x   =  BOING_VX_INIT;
     g_boing_vel_y   =  0;
     g_boing_yaw_dir =  1;
-    stop_vgm_playback();  /* stop BGM completely; only FX audio plays during this demo */
+    stop_vgm_playback();  /* Only kick FX audio plays during this demo */
 }
 
 static void demo6_exit(void) {
     vgm_close();            /* silence any in-progress kick FX before leaving */
-    start_vgm_playback();  /* restart BGM from the beginning */
+    start_vgm_playback();  /* restart background music VGM from the beginning */
     vgk_hidden_line_disable();
     vgk_no_near_far_coloring = false;
 }
 
 static void demo6_static(void) {
-    /* initial static pose — on_enter already positioned the object */
+    /* on_enter already positioned the object */
 }
 
 static void demo6_bounce(void) {
@@ -501,7 +501,7 @@ static void demo6_bounce(void) {
     g_boing_pos_y = (int16_t)(g_boing_pos_y + g_boing_vel_y);
     g_boing_pos_x = (int16_t)(g_boing_pos_x + g_boing_vel_x);
 
-    /* floor bounce — centre kick */
+    /* floor bounce — center kick */
     if (g_boing_pos_y < BOING_FLOOR_Y) {
         g_boing_pos_y   = BOING_FLOOR_Y;
         g_boing_vel_y   = (int16_t)(-g_boing_vel_y);

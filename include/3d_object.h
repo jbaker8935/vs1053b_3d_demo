@@ -22,24 +22,23 @@
 #endif
 
 // Model and transform math all int16_t Q14, 
-// but transformed outbatch uses float for compatibility with rasterizer.
 typedef struct {
     uint8_t vertex_count;
     uint8_t edge_count;
     
-    // Bounding sphere for quick culling (model local space)
+    // Bounding sphere for quick culling
     int16_t center_x;
     int16_t center_y;
     int16_t center_z;
     int16_t radius;
     uint16_t object_color; // 16-bit packed palette index high byte is far color, low byte is near color
 
-    // Structure-of-Arrays vertex storage (length = vertex_count)
+    // Vertex storage (length = vertex_count)
     POINTER(const int16_t) vx;
     POINTER(const int16_t) vy;
     POINTER(const int16_t) vz;
 
-    // Structure-of-Arrays edges (length = edge_count)
+    // Edge storage (length = edge_count)
     POINTER(const uint8_t) edge_a;
     POINTER(const uint8_t) edge_b;
 
@@ -54,7 +53,7 @@ typedef struct {
     POINTER(const uint8_t) edge_face0;
     POINTER(const uint8_t) edge_face1;
 
-    // Optional per-edge color
+    // Reserved for Future: Optional per-edge color
     // overrides object-level color
     // 16-bit packed palette index high byte is far color, low byte is near color
     uint8_t edge_color_count;

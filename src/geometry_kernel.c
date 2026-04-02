@@ -29,21 +29,6 @@ const int16_t sin_table[256] = {
 
 };
 
-int16_t kernelWriteC(uint8_t fd, void *buf, uint16_t nbytes) {
-    kernelArgs->file.write.stream = fd;
-    kernelArgs->common.buf = buf;
-    kernelArgs->common.buflen = nbytes;
-    kernelCall(File.Write);
-    if (kernelError) return -1;
-
-    for (;;) {
-        kernelNextEvent();
-        if (kernelEventData.type == kernelEvent(file.WROTE)) return kernelEventData.file.data.delivered;
-        if (kernelEventData.type == kernelEvent(file.ERROR)) return -1;
-    }
-}
-
-
 void vgk_plugin_init(void) {
     vs1053_mem_write(VGK_STATUS, 0x0000);  // Clear status
     vs1053_sci_write(SCI_AIADDR, 0x0050);
@@ -114,7 +99,7 @@ void vgk_model_vertices_init(const Model3D *model, uint8_t slot) {
 
 // Tracks the active hidden-line state so get_screen_edges_full_asm can
 // choose the fast path (no OUTPUT_EDGES reads) when removal is disabled.
-// Non-static so emit_edges_asm.s can access it via .extern.
+// emit_edges_asm.s accesses it via .extern.
 bool vgk_no_near_far_coloring = false;
 bool vgk_hidden_line_active = false;
 
@@ -171,8 +156,8 @@ void vgk_model_hidden_line_init(const Model3D *model, uint8_t slot) {
 }
 
 void vgk_model_slot_init(const Model3D *model, uint8_t slot) {
-    // Write geometry directly to the save slot: no DSP round-trip needed.
-    // The DSP _load_object (AICTRL2 trigger) will copy from this slot to the
+    // Write geometry directly to the save slot
+    // The kernel will copy from this slot to the
     // active working area when the object is first used in a scene.
     vgk_model_vertices_init(model, slot);
     vgk_model_edges_init(model, slot);
@@ -195,9 +180,7 @@ void vgk_yield_cb_set(void (*cb)(void)) {
     g_yield_cb = cb;
 }
 
-/* Call the registered yield callback once.  Use this at coarse-grained idle
- * points (after a full object readback, inside a vsync spin-wait) to keep the
- * audio tick running without adding a poll inside every 15 µs SCI call. */
+/* Call the registered yield callback once.  */
 void vgk_yield(void) {
     if (g_yield_cb) { g_yield_cb(); }
 }
@@ -212,6 +195,7 @@ void vgk_trigger(void) {
 }
 
 // load Object from internal slot
+__attribute__((noinline))
 bool vgk_model_load(uint16_t slot) {
     vs1053_sci_write(SCI_AICTRL2, slot);            // Set trigger to start processing
     if (vgk_wait_complete(1000) == 1) {  // wait for completion (or error)
@@ -251,7 +235,7 @@ uint8_t vgk_wait_complete(uint16_t timeout_ms) {
         if (g_yield_cb) {
             g_yield_cb();
         } else {
-            for (volatile uint16_t delay = 0; delay < 25; delay++) {
+            for ( uint8_t delay = 0; delay < 25; delay++) {
                 __asm__("nop");
             }
         }
@@ -266,9 +250,8 @@ uint16_t screen_y[VGK_MAX_VERTICES];
 uint8_t screen_y8[VGK_MAX_VERTICES];
 uint16_t clip_verts_y[VGK_MAX_VERTICES];
 
-// SoA coordinate arrays for the direct-emit path (get_screen_edges_with_depth).
-// Split into separate lo/hi/y byte arrays so assembly can index with vertex
-// index directly (LDA arr,X) without a ×2 multiply needed for uint16_t arrays.
+// Coordinate arrays for the direct-emit path (get_screen_edges_with_depth).
+
 uint8_t scr_x_lo[VGK_MAX_VERTICES];  // screen X low  bytes — for original vertices
 uint8_t scr_x_hi[VGK_MAX_VERTICES];  // screen X high bytes
 uint8_t scr_y[VGK_MAX_VERTICES];     // screen Y        (only low byte used)
@@ -283,7 +266,7 @@ int16_t scene_clip_x[VGK_SCENE_MAX_CLIPS];
 int16_t scene_clip_y[VGK_SCENE_MAX_CLIPS];
 
 // Zero-page parameter block for get_screen_edges_full_asm.
-// Defined here (not in asm) so the LTO optimizer sees their ZP cost when deciding
+// Defined here so the optimizer sees their ZP cost when deciding
 // whether other variables can be autopromoted — preventing ZP overflow.
 // g_emit_layer_ctrl is computed entirely in asm but defined here for the same reason.
 uint8_t __zp g_emit_edge_count;
@@ -295,17 +278,14 @@ uint8_t __zp g_emit_far_color;
 uint8_t __zp g_emit_layer_ctrl;
 
 // ZP pointers used by get_screen_edges_full_asm fast path.
-// Assembly uses (g_emit_edge_a),Y and (g_emit_edge_b),Y for edge vertex index reads,
-// avoiding the pre-resolved g_emit_x0/y0/x1/y1 tables that existed previously.
 const uint8_t * __zp g_emit_edge_a;
 const uint8_t * __zp g_emit_edge_b;
 
 // Per-frame edge buffer shared between get_screen_edges_full_asm and scene_get_screen_edges.
-// Non-static so emit_edges_asm.s can declare them via .extern.
+// emit_edges_asm.s declares them via .extern.
 uint16_t g_edge_buf_packed[VGK_MAX_EDGES];
 uint8_t  g_edge_buf_flags[VGK_MAX_EDGES];
 
-// Forward declaration of the monolithic asm emitter.
 extern uint8_t vgk_scrn_edges_get_asm(uint8_t layer);
 
 // -----------------------------------------------------------------------------
@@ -344,8 +324,7 @@ void vgk_plugin_capture_state(PluginCapture *cap) {
     cap->n_clip_verts = vs1053_mem_read(VGK_N_CLIP_VERTS);
     cap->status = vs1053_mem_read(VGK_STATUS);
 
-    // sample output edge list — Phase 1 format: flags packed 2/word at OUTPUT_EDGE_FLAGS,
-    // packed v0v1 at OUTPUT_EDGE_PACKED.
+    // sample output edge list 
     {
         uint16_t n = cap->n_output_edges < CAPTURE_MAX_EDGES ? cap->n_output_edges : CAPTURE_MAX_EDGES;
         for (int i = 0; i < (int)n; ++i) {
@@ -365,6 +344,8 @@ void vgk_plugin_capture_state(PluginCapture *cap) {
     }
 }
 
+/* vgk_scrn_edges_with_depth_get: Retrieves and emits line edges to the screen
+ */
 __attribute__((noinline))
 uint8_t vgk_scrn_edges_with_depth_get(Model3D *model, uint8_t layer) {
     uint8_t ec = model->edge_count;
@@ -382,13 +363,17 @@ uint8_t vgk_scrn_edges_with_depth_get(Model3D *model, uint8_t layer) {
     return vgk_scrn_edges_get_asm(layer);
 }
 
+/* vgk_scrn_edges_get: *legacy* reader that only retrieves edge screen vertices and saves
+ * the data in the global line list used by draw_lines_asm.
+ * Does not support near/far coloring. color argument sets the object color
+ */
 uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
     // Read number of input vertices (needed to distinguish original vs clipped)
 
     uint8_t edges_written = 0;
     uint8_t start_line_count = g_line_count;
 
-    volatile uint8_t n_input = model->vertex_count;  // vs1053_mem_read(VGK_N_VERTICES);
+    volatile uint8_t n_input = model->vertex_count;  // use model definition
 
     // Read number of output edges
     volatile uint8_t edge_count = vs1053_mem_read(VGK_N_OUTPUT_EDGES);
@@ -403,10 +388,8 @@ uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
     uint8_t n_clip = vs1053_mem_read(VGK_N_CLIP_VERTS);
 
     {
-        // Read back edges from X-RAM so host always honors plugin cull flags
-        // supports up to 16 clipped vertices, are going to replace edge vertices.
         if (n_clip > 16)
-            n_clip = 16;  // safety clamp
+            n_clip = 16;  // safety 
         int16_t clip_sx[16] = {0};
         int16_t clip_sy[16] = {0};
         if (n_clip > 0) {
@@ -417,8 +400,7 @@ uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
             }
         }
 
-        // Phase 1: burst-read all flags from VGK_OUTPUT_EDGE_FLAGS,
-        // then use model edge data for unclipped edges and individual SCI reads for clipped.
+        // Burst-read all flags from VGK_OUTPUT_EDGE_FLAGS,
         {
             uint8_t n_flag_words = (edge_count + 1) >> 1;
             vs1053_sci_write(SCI_WRAMADDR, VGK_OUTPUT_EDGE_FLAGS);
@@ -434,8 +416,6 @@ uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
                 if (!(flags & VGK_EDGE_VISIBLE))
                     continue;
 
-                // Always read from VGK_OUTPUT_EDGE_PACKED: output edge index e does
-                // NOT correspond to input edge e when culling reduces output count.
                 uint16_t packed = vs1053_mem_read(VGK_OUTPUT_EDGE_PACKED + e);
                 uint8_t v0 = (uint8_t)(packed & 0xFF);
                 uint8_t v1 = (uint8_t)(packed >> 8);
@@ -469,7 +449,7 @@ uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
     return edges_written;
 }
 
-#if 1
+#if 1  // enabled
 
 // =============================================================================
 // Scene API implementation
@@ -477,6 +457,8 @@ uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
 // These functions program the VGK_SCENE_* memory region so the DSP scene
 // loop can iterate over multiple saved objects in a single trigger.  The host
 // writes the descriptor, triggers the kernel, then reads combined results.
+//
+// Work in progress.  Not optimized.
 
 void vgk_scene_enable(void) {
     vs1053_mem_write(VGK_SCENE_ENABLE, 0x0001);
@@ -629,7 +611,6 @@ uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
                                 uint8_t draw_layer) {
     // Write the scene descriptor and trigger the kernel in scene mode.
     vgk_scene_enable();
-    // Set scene if objects is non-null, otherwise use existing descriptor in DSP memory (caller can pre-set objects and just trigger here)
     if (objects != NULL) {
         vgk_scene_set_descriptor(n_objects, objects);
     }
@@ -650,10 +631,6 @@ uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
     if (n_verts > VGK_SCENE_MAX_VERTS) n_verts = VGK_SCENE_MAX_VERTS;
     if (n_clips > VGK_SCENE_MAX_CLIPS) n_clips = VGK_SCENE_MAX_CLIPS;
 
-    // Read combined scene screen and clip buffers once.
-    // Per-edge near/far colour selection uses VGK_EDGE_NEAR which the DSP
-    // sets per-edge relative to each object's own vertex depth range, giving
-    // the same per-object near/far behaviour as single-object mode.
     if (n_verts > 0) {
         vs1053_sci_write(SCI_WRAMADDR, VGK_SCENE_SCREEN_COORDS);
         for (uint16_t i = 0; i < n_verts; ++i) {
@@ -670,15 +647,12 @@ uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
         }
     }
 
-    /* Yield after the bulk coord readback so audio isn't starved across
-     * the potentially large screen + clip SCI burst before edge drawing. */
+    /* Yield to callback for audio */
     vgk_yield();
 
     uint8_t edges_written = 0;
 
     // Process each object's edges from the combined scene output.
-    // Packed vertex indices are scene-global; clip flags determine whether
-    // each endpoint indexes scene clip coords or scene screen coords.
     for (uint8_t obj = 0; obj < res.n_objects; ++obj) {
 
         // Read this object's output edges from the combined edge buffer.
@@ -763,9 +737,7 @@ uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
             reset_line_list();
         }
 
-        /* Yield between objects: covers edge readback + two draw passes
-         * per object, keeping audio ticks from being starved on scenes
-         * with multiple objects. */
+        /* Yield between objects */
         vgk_yield();
     }
 

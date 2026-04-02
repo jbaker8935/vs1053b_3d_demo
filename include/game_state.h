@@ -9,8 +9,6 @@
 #define SCREEN_WIDTH   320
 #define SCREEN_HEIGHT  240
 
-#define DEMO_MAX_INSTANCES 8
-
 typedef enum {
 STATE_DEMO
 } GameMode;

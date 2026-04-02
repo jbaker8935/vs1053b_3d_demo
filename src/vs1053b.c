@@ -35,18 +35,18 @@ uint16_t vs1053_mem_read(uint16_t wram_addr) {
     vs1053_sci_write(SCI_WRAMADDR, wram_addr);
     return vs1053_sci_read(SCI_WRAM);
 }
-
+__attribute__((noinline))
 void vs1053_dac_mute(void) {
     /* Mute both channels (~63.5 dB attenuation) */
     vs1053_sci_write(SCI_VOL, 0xFEFE);
 }
-
+__attribute__((noinline))
 void vs1053_dac_interrupt_disable(void) {
     uint16_t reg = vs1053_mem_read(0xC01A);      /* INT_ENABLE read */
     reg &= ~(1u << 0);                           /* clear INT_EN_DAC */
     vs1053_mem_write(0xC01A, reg);
 }
-
+__attribute__((noinline))
 void vs1053_dac_interrupt_enable(void) {
     uint16_t reg = vs1053_mem_read(0xC01A);
     reg |= (1u << 0);                            /* set INT_EN_DAC */
@@ -56,7 +56,8 @@ void vs1053_dac_interrupt_enable(void) {
 /* -----------------------------------------------------------------------
  * Plugin load/clock helpers
  * ----------------------------------------------------------------------- */
-void vs1053_plugin_init(uint16_t size) {
+__attribute__((noinline))
+ void vs1053_plugin_init(uint16_t size) {
   uint16_t n;
   uint16_t addr, val;
   uint32_t i = 0;
@@ -93,7 +94,7 @@ void vs1053_plugin_init(uint16_t size) {
     }
   }
 }
-
+__attribute__((noinline))
 void vs1053_plugin_load() {
   uint32_t plugin_size_bytes = (uint32_t)(plugin_data_end - plugin_data_start);
   uint16_t plugin_size_words = (uint16_t)(plugin_size_bytes >> 1);

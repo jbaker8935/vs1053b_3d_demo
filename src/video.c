@@ -2,9 +2,6 @@
 
 #include "f256lib.h"
 
-
-EMBED(cockpit_bitmap, "assets/cockpit.bin", 0x6c000);
-
 #define DMA_FILL_VAL16   0xDF02
 #define DMA_16_BIT      0x40
 uint32_t bitmap_base[] = {0x6c000, 0x58000, 0x44000};

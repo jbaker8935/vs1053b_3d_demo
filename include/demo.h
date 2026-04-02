@@ -41,7 +41,7 @@ typedef struct {
 } Demo;
 
 // ---------------------------------------------------------------------------
-// Per-instance mutable animation state (SoA for 6502 indexed access)
+// Per-instance animation state
 // ---------------------------------------------------------------------------
 extern SceneObjectParams g_demo_instances[DEMO_MAX_INSTANCES];
 extern uint8_t           g_demo_instance_count;

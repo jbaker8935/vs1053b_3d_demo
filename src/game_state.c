@@ -1,7 +1,7 @@
 #include "../include/game_state.h"
 #include "../include/3d_object.h"
-#include "../include/scene.h"
 #include "../include/input.h"
+#include "../include/geometry_kernel.h"
 
 #include <string.h>
 
@@ -45,6 +45,7 @@ return value;
 }
 
 void game_state_update_3d(InputState *input) {
+// increment camera position based on orientation
 int16_t speed = 35;
 
 uint8_t yaw = g_ctx.wireframe.camera.yaw;

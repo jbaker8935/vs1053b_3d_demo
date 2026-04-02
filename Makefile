@@ -1,4 +1,4 @@
-# Makefile for arcade
+# Makefile for vs1053b_3d_demo
 # Build artifacts go into `build/`
 
 ROOT := $(CURDIR)
@@ -8,6 +8,7 @@ NAME = vs1053b_3d_demo
 FOENIX_MGR := "/home/john/code/FoenixMgr/fm.sh"
 
 # Tool locations (use the user's tool locations by default)
+# note: f256lib.h was manually copied to /opt/llvm-mos/include
 CC := /opt/llvm-mos/bin/mos-f256-clang
 LD := /opt/llvm-mos/bin/ld.lld
 MOS_LIB_DIR ?= /opt/llvm-mos/mos-platform/f256/lib
@@ -160,76 +161,182 @@ run: pgz
 	@echo "Running $(NAME) on Foenix..."
 	@$(FOENIX_MGR) --port /dev/ttyUSB2 --run-pgz $(ROOT)/bin/$(NAME).pgz
 
-# Benchmarks
-BENCH_NAME := bench_mul
-BENCH_OBJ := $(BUILD_DIR)/$(BENCH_NAME).o
 
-bench: $(BUILD_DIR)/$(BENCH_NAME).pgz
-	@echo "bench build complete: $<"
+# Single object demo
+SINGLE_NAME := single_object
+SINGLE_SRC := examples/single_object.c
+SINGLE_OBJ := $(BUILD_DIR)/$(SINGLE_NAME).o
+SINGLE_ASM := $(BUILD_DIR)/$(SINGLE_NAME).s
+SINGLE_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/draw_line.o $(BUILD_DIR)/draw_lines_asm.o $(BUILD_DIR)/emit_edges_asm.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+SINGLE_OBJS := $(SINGLE_OBJ) $(SINGLE_DEPS)
+# Separate overlay output dir for single_object (only plugin_data, no other assets)
+SINGLE_OVERLAY_DIR := $(BUILD_DIR)/so
+SINGLE_SRC_STAGING := $(BUILD_DIR)/so_src
 
-$(BUILD_DIR)/$(BENCH_NAME): $(BENCH_OBJ) | dirs
-	$(CC) -D__llvm_mos__ -T $(LDSCRIPT) -o $@ $(BENCH_OBJ) -I.. -Os -Wall -lm
+.PHONY: single_object single_object_overlay
+single_object: $(BUILD_DIR)/$(SINGLE_NAME).pgz
+	@echo "single_object build complete: $<"
 
-$(BUILD_DIR)/$(BENCH_NAME).pgz: $(BUILD_DIR)/$(BENCH_NAME)
-	@# Wrap bench binary in .pgz format (same as normal build)
-	@if [ -f $(BUILD_DIR)/$(BENCH_NAME) ]; then \
-		mv $(BUILD_DIR)/$(BENCH_NAME) $(BUILD_DIR)/$(BENCH_NAME).pgz; \
+# Overlay scoped to only vs1053b.c — produces output.ld with just plugin_data segment
+single_object_overlay: dirs
+	@mkdir -p $(SINGLE_SRC_STAGING)/assets $(SINGLE_OVERLAY_DIR)/assets
+	@cp $(ROOT)/src/vs1053b.c $(SINGLE_SRC_STAGING)/
+	@cp -a $(ROOT)/src/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/src/assets/* $(SINGLE_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(SINGLE_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@if command -v $(OVERLAY) >/dev/null 2>&1; then \
+		$(OVERLAY) 5 $(SINGLE_OVERLAY_DIR) $(SINGLE_SRC_STAGING) || { echo "single_object overlay failed" >&2; exit 1; }; \
+	else \
+		echo "overlay not found; skipping single_object overlay step"; \
 	fi
-	@# Copy bench artifact to bin/ for easy access
-	@mkdir -p bin
-	@cp $(BUILD_DIR)/$(BENCH_NAME).pgz bin/
 
-# T0 pending-flag reliability test (hardware bug investigation)
-TEST_T0_PEND_NAME := test_t0_pend
-TEST_T0_PEND_OBJ  := $(BUILD_DIR)/$(TEST_T0_PEND_NAME).o
-
-test_t0_pend: $(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz
-	@echo "test_t0_pend build complete: $<"
-
-$(BUILD_DIR)/$(TEST_T0_PEND_NAME).o: tools/$(TEST_T0_PEND_NAME).c | dirs
+$(BUILD_DIR)/$(SINGLE_NAME).o: $(SINGLE_SRC) | dirs
 	$(CC) -c $(CFLAGS) -o $@ $<
 
-$(BUILD_DIR)/$(TEST_T0_PEND_NAME): $(BUILD_DIR)/$(TEST_T0_PEND_NAME).o | dirs
-	$(CC) -D__llvm_mos__ -T $(LDSCRIPT) -o $@ $< -I.. -Os -Wall -lm
+$(BUILD_DIR)/$(SINGLE_NAME).s: $(SINGLE_SRC) | dirs
+	$(CC) -S $(CFLAGS) -o $@ $<
 
-$(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz: $(BUILD_DIR)/$(TEST_T0_PEND_NAME)
-	@if [ -f $(BUILD_DIR)/$(TEST_T0_PEND_NAME) ]; then \
-		mv $(BUILD_DIR)/$(TEST_T0_PEND_NAME) $(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz; \
-	fi
-	@mkdir -p bin
-	@cp $(BUILD_DIR)/$(TEST_T0_PEND_NAME).pgz bin/
+$(BUILD_DIR)/$(SINGLE_NAME): single_object_overlay $(SINGLE_OBJS) | dirs
+	(cd $(SINGLE_OVERLAY_DIR) && \
+	$(CC) \
+		-D__llvm_mos__ \
+		-T ../../$(LDSCRIPT) \
+		-Wl,-Map=../$(SINGLE_NAME).map \
+		-o ../$(SINGLE_NAME) \
+		-I../.. \
+		-Os -Wall -lm \
+		$(addprefix ../,$(notdir $(SINGLE_OBJS))) \
+		$(LDFLAGS))
 
-# far_mvn stress test
-TEST_FAR_MVN_NAME := test_far_mvn
-TEST_FAR_MVN_OBJ  := $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).o
-
-test_far_mvn: $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz
-	@echo "test_far_mvn build complete: $<"
-
-$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).o: tools/$(TEST_FAR_MVN_NAME).c | dirs
-	$(CC) -c $(CFLAGS) -o $@ $<
-
-$(BUILD_DIR)/$(TEST_FAR_MVN_NAME): $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).o | dirs
-	$(CC) -D__llvm_mos__ -T $(LDSCRIPT) -o $@ $< -I.. -Os -Wall -lm
-
-$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz: $(BUILD_DIR)/$(TEST_FAR_MVN_NAME)
-	@if [ -f $(BUILD_DIR)/$(TEST_FAR_MVN_NAME) ]; then \
-		mv $(BUILD_DIR)/$(TEST_FAR_MVN_NAME) $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz; \
-	fi
-	@# Generate listing if an ELF variant exists (same behavior as main target)
-	@if [ -f $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf ]; then \
-		ELF_FILE=$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf; \
-	elif [ -f $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf.elf ]; then \
-		ELF_FILE=$(BUILD_DIR)/$(TEST_FAR_MVN_NAME).elf.elf; \
+$(BUILD_DIR)/$(SINGLE_NAME).pgz: $(BUILD_DIR)/$(SINGLE_NAME)
+	@# If linker produced an ELF variant, use it for symbol/listing; otherwise skip.
+	@if [ -f $(BUILD_DIR)/$(SINGLE_NAME).elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(SINGLE_NAME).elf; \
+	elif [ -f $(BUILD_DIR)/$(SINGLE_NAME).elf.elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(SINGLE_NAME).elf.elf; \
 	else \
 		ELF_FILE=; \
 	fi; \
-	if [ -n "$${ELF_FILE}" ]; then \
-		$(NM) "$${ELF_FILE}" > $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).sym || true; \
-		$(OBJDUMP) --syms -d --print-imm-hex "$${ELF_FILE}" > $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).lst || true; \
+	if [ -n "$$ELF_FILE" ]; then \
+		$(NM) "$$ELF_FILE" > $(BUILD_DIR)/$(SINGLE_NAME).sym || true; \
+		$(OBJDUMP) --syms -d --print-imm-hex "$$ELF_FILE" > $(BUILD_DIR)/$(SINGLE_NAME).lst || true; \
+	fi
+
+	# If linker produced a raw binary named '$(SINGLE_NAME)', promote it to .pgz as f256build.sh did
+	@if [ -f $(BUILD_DIR)/$(SINGLE_NAME) ]; then \
+		mv $(BUILD_DIR)/$(SINGLE_NAME) $(BUILD_DIR)/$(SINGLE_NAME).pgz; \
+	fi
+
+	# If a .pgz was created by overlay or the linker, run pgz-thunk to inspect it
+	@if [ -f $(BUILD_DIR)/$(SINGLE_NAME).pgz ]; then \
+		SCRIPT=""; \
+		if [ -f "$(PGZ_THUNK)" ]; then \
+			SCRIPT="$(PGZ_THUNK)"; \
+		elif command -v $(PGZ_THUNK) >/dev/null 2>&1; then \
+			SCRIPT="$$(command -v $(PGZ_THUNK))"; \
+		fi; \
+		if [ -n "$$SCRIPT" ]; then \
+			$(PYTHON) "$$SCRIPT" $(BUILD_DIR)/$(SINGLE_NAME).pgz || echo "pgz-thunk did not process $(BUILD_DIR)/$(SINGLE_NAME).pgz"; \
+		fi; \
+	fi
+
+	# Ensure a PGZ artifact was produced by overlay/pgz-thunk.
+	@if [ ! -f $(BUILD_DIR)/$(SINGLE_NAME).pgz ]; then \
+		echo "ERROR: pgz-thunk did not produce $(BUILD_DIR)/$(SINGLE_NAME).pgz" >&2; \
+		exit 1; \
 	fi
 	@mkdir -p bin
-	@cp $(BUILD_DIR)/$(TEST_FAR_MVN_NAME).pgz bin/
+	@cp $(BUILD_DIR)/$(SINGLE_NAME).pgz bin/
+
+# Multi-object scene demo (mirrors single_object pattern)
+MULTI_NAME := multi_object_scene
+MULTI_SRC := examples/multi_object_scene.c
+MULTI_OBJ := $(BUILD_DIR)/$(MULTI_NAME).o
+MULTI_ASM := $(BUILD_DIR)/$(MULTI_NAME).s
+MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/draw_line.o $(BUILD_DIR)/draw_lines_asm.o $(BUILD_DIR)/emit_edges_asm.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+MULTI_OBJS := $(MULTI_OBJ) $(MULTI_DEPS)
+# Separate overlay output dir for multi_object_scene (only plugin_data, no other assets)
+MULTI_OVERLAY_DIR := $(BUILD_DIR)/mo
+MULTI_SRC_STAGING := $(BUILD_DIR)/mo_src
+
+.PHONY: $(MULTI_NAME) multi_object_overlay
+$(MULTI_NAME): $(BUILD_DIR)/$(MULTI_NAME).pgz
+	@echo "$(MULTI_NAME) build complete: $<"
+
+# Overlay scoped to only vs1053b.c — produces output.ld with just plugin_data segment
+multi_object_overlay: dirs
+	@mkdir -p $(MULTI_SRC_STAGING)/assets $(MULTI_OVERLAY_DIR)/assets
+	@cp $(ROOT)/src/vs1053b.c $(MULTI_SRC_STAGING)/
+	@cp -a $(ROOT)/src/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/src/assets/* $(MULTI_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(MULTI_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@if command -v $(OVERLAY) >/dev/null 2>&1; then \
+		$(OVERLAY) 5 $(MULTI_OVERLAY_DIR) $(MULTI_SRC_STAGING) || { echo "multi overlay failed" >&2; exit 1; }; \
+	else \
+		echo "overlay not found; skipping multi overlay step"; \
+	fi
+
+$(BUILD_DIR)/$(MULTI_NAME).o: $(MULTI_SRC) | dirs
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(MULTI_NAME).s: $(MULTI_SRC) | dirs
+	$(CC) -S $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(MULTI_NAME): multi_object_overlay $(MULTI_OBJS) | dirs
+	(cd $(MULTI_OVERLAY_DIR) && \
+	$(CC) \
+		-D__llvm_mos__ \
+		-T ../../$(LDSCRIPT) \
+		-Wl,-Map=../$(MULTI_NAME).map \
+		-o ../$(MULTI_NAME) \
+		-I../.. \
+		-Os -Wall -lm \
+		$(addprefix ../,$(notdir $(MULTI_OBJS))) \
+		$(LDFLAGS))
+
+$(BUILD_DIR)/$(MULTI_NAME).pgz: $(BUILD_DIR)/$(MULTI_NAME)
+	@if [ -f $(BUILD_DIR)/$(MULTI_NAME).elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(MULTI_NAME).elf; \
+	elif [ -f $(BUILD_DIR)/$(MULTI_NAME).elf.elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(MULTI_NAME).elf.elf; \
+	else \
+		ELF_FILE=; \
+	fi; \
+	if [ -n "$$ELF_FILE" ]; then \
+		$(NM) "$$ELF_FILE" > $(BUILD_DIR)/$(MULTI_NAME).sym || true; \
+		$(OBJDUMP) --syms -d --print-imm-hex "$$ELF_FILE" > $(BUILD_DIR)/$(MULTI_NAME).lst || true; \
+	fi
+
+	@if [ -f $(BUILD_DIR)/$(MULTI_NAME) ]; then \
+		mv $(BUILD_DIR)/$(MULTI_NAME) $(BUILD_DIR)/$(MULTI_NAME).pgz; \
+	fi
+
+	@if [ -f $(BUILD_DIR)/$(MULTI_NAME).pgz ]; then \
+		SCRIPT=""; \
+		if [ -f "$(PGZ_THUNK)" ]; then \
+			SCRIPT="$(PGZ_THUNK)"; \
+		elif command -v $(PGZ_THUNK) >/dev/null 2>&1; then \
+			SCRIPT="$$(command -v $(PGZ_THUNK))"; \
+		fi; \
+		if [ -n "$$SCRIPT" ]; then \
+			$(PYTHON) "$$SCRIPT" $(BUILD_DIR)/$(MULTI_NAME).pgz || echo "pgz-thunk did not process $(BUILD_DIR)/$(MULTI_NAME).pgz"; \
+		fi; \
+	fi
+
+	# Ensure a PGZ artifact was produced by overlay/pgz-thunk.
+	@if [ ! -f $(BUILD_DIR)/$(MULTI_NAME).pgz ]; then \
+		echo "ERROR: pgz-thunk did not produce $(BUILD_DIR)/$(MULTI_NAME).pgz" >&2; \
+		exit 1; \
+	fi
+	@mkdir -p bin
+	@cp $(BUILD_DIR)/$(MULTI_NAME).pgz bin/
+
+.PHONY: examples
+examples: single_object multi_object_scene
+	@echo "Built examples: bin/single_object.pgz bin/multi_object_scene.pgz"
+
 
 info:
 	@echo "ROOT = $(ROOT)"

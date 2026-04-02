@@ -32,27 +32,21 @@ const Model3D g_model_projectile = {
 // Starfield
 
 static const int16_t g_stars_vx[32] = {
-    //-- 12 icosahedron vertices (r≈8000) --
         0,     0,  5236, -5236,  5236, -5236,  8000, -8000,  8000, -8000,     0,     0,
-    //-- 20 scatter fill points (hand-distributed across sky) --
      3000, -3000,  6000, -6000,  1000, -1000,  7000, -7000,
      4500, -4500,  2000, -2000,  6500, -6500,  3500, -3500,
      5500, -5500,  7500,  -500
 };
 
 static const int16_t g_stars_vy[32] = {
-    //-- 12 icosahedron --
      5236,  5236,  8000,  8000, -8000, -8000,     0,     0,     0,     0,  5236, -5236,
-    //-- 20 fill --
      7000,  7000,  2000,  2000,  8000,  8000,  1000,  1000,
     -7000, -7000, -2000, -2000, -5000, -5000,  5000,  5000,
      3000,  3000, -6000, -6000
 };
 
 static const int16_t g_stars_vz[32] = {
-    //-- 12 icosahedron --
      5236, -5236,     0,     0,     0,     0,  5236,  5236, -5236, -5236,  8000,  8000,
-    //-- 20 fill --
      1000, -1000,  5000, -5000,  2000, -2000,  3000, -3000,
      2500, -2500,  6000, -6000,  1500, -1500,  4500, -4500,
      6000, -6000,  3000, -3000
@@ -83,7 +77,7 @@ const Model3D g_model_starfield = {
     .center_x = 0,
     .center_y = 0,
     .center_z = 0,
-    .radius   = 1,             // kernel scale: start at 1.0 (neutral)
+    .radius   = 1,             // not used
     .object_color = 0x0F0F,    // default white.  could vary brightness.
     .face_count   = 0,
 };
@@ -128,14 +122,13 @@ static const uint8_t g_cube_edge_face1[12] = {
 };
 
 const Model3D g_model_cube = {
-    .vertex_count = 8,  // debug 2 instead of 8
-    .edge_count = 12,    // debug 1 instead of 12
+    .vertex_count = 8,  
+    .edge_count = 12,   
     .vx = g_cube_vx,
     .vy = g_cube_vy,
     .vz = g_cube_vz,
     .edge_a = g_cube_edge_a,
     .edge_b = g_cube_edge_b,
-    // Center and radius derived from the provided AABB.
     .center_x = 0,
     .center_y = 0,
     .center_z = 0,
@@ -182,7 +175,7 @@ const Model3D g_model_anaconda = {
 };
 
 
-/* truncated octahedron — canonical (0, ±1, ±2) permutation set, scaled ×48.
+/* truncated octahedron - max edges supported by current kernel
  * 24 vertices, 36 edges, 14 faces (6 squares + 8 hexagons).
  */
 
@@ -204,7 +197,7 @@ static const int16_t to_vz[24] = {
       0, -96 * TO_SCALE,  96 * TO_SCALE,   0,    0, -48 * TO_SCALE,  48 * TO_SCALE,   0
 };
 
-/* 36 edges: every adjacent vertex pair at distance √2 in raw unit coords */
+/* 36 edges */
 static const uint8_t to_edge_a[36] = {
      0,  0,  0,  1,  1,  2,  2,  3,  4,  4,
      5,  5,  6,  6,  7,  7,  8,  8,  9,  9,
@@ -218,8 +211,7 @@ static const uint8_t to_edge_b[36] = {
     22, 23, 21, 22, 23, 23
 };
 
-/* 14 face normals in Q14 object space.
- * Faces 0-5: square faces (axis-aligned), faces 6-13: hexagonal faces. */
+/* 14 face normals in Q14 object space. */
 static const int16_t to_face_nx[14] = {
     -16384,  16384,      0,      0,      0,      0,
      -9459,  -9459,  -9459,  -9459,   9459,   9459,   9459,   9459
@@ -233,7 +225,7 @@ static const int16_t to_face_nz[14] = {
      -9459,   9459,  -9459,   9459,  -9459,   9459,  -9459,   9459
 };
 
-/* Per-edge adjacent face indices (derived from face membership of each vertex) */
+/* Per-edge adjacent face indices */
 static const uint8_t to_edge_face0[36] = {
      0,  0,  6,  0,  6,  0,  7,  8,  2,  2,
      4,  4,  5,  5,  3,  3,  6,  2,  7,  2,
@@ -253,7 +245,7 @@ const Model3D g_model_truncated_octahedron = {
     .center_x = 0,
     .center_y = 0,
     .center_z = 0,
-    .radius   = 108,  // ceil(sqrt(96²+48²)) = ceil(107.3)
+    .radius   = 108 * TO_SCALE, // Not used
 
     .object_color = 0x0D0B,
 
