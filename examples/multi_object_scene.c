@@ -4,7 +4,6 @@
 #include "../include/geometry_kernel.h"
 #include "../include/3d_object.h"
 #include "../include/video.h"
-#include "../include/draw_line.h"
 
 static SceneObjectParams scene_objs[8] = {
     { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-400, .pos_y=0, .pos_z=400 },

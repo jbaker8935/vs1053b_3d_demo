@@ -4,7 +4,6 @@
 #include "../include/geometry_kernel.h"
 #include "../include/3d_object.h"
 #include "../include/video.h"
-#include "../include/draw_line.h"
 
 static uint8_t visible_layer = 1;
 void app_init(void) {
