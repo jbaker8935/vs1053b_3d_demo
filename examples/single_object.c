@@ -14,7 +14,7 @@ void app_init(void) {
     vs1053_dac_interrupt_disable(); // Decoder RAM is being used.  
     vgk_projection_params_init(120, 160, 120, -64);
     vgk_model_slot_init(&g_model_cube, 0);
-    vgk_cam_params_set(0, 0, 0, 0, 200, 1400);
+    vgk_cam_params_set(0, 0, 0, 0, 200, 2400);
     vgk_hidden_line_enable();
     vgk_no_near_far_coloring = false;
 }

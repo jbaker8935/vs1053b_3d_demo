@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
     video_init();
 
     // 4:3 aspect 320x240 with vertical fov 90 degrees
-    vgk_projection_params_init(120, 160, 120, -64);
+    vgk_projection_params_init(240, 160, 120, -128);
 
     init_models();
     codec_init();

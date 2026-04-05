@@ -162,8 +162,8 @@ static const Demo demo2 = {
 static const SceneObjectParams demo3_init[] = {
     { .slot=1, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=100, .pos_z=-2000 },
     { .slot=6, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=100, .pos_z=-2000 },            
-    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=200, .pos_z=1400 },
-    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=200, .pos_z=1400 },
+    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=200, .pos_z=2400 },
+    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=200, .pos_z=2400 },
 };
 
 static const Model3D * const demo3_models[] = { &g_model_anaconda, &g_model_projectile,
@@ -201,11 +201,11 @@ static void demo3_setup_anaconda_2(void) {
 }
 
 static void demo3_fly(void) {
-    // Increment Z to move anaconda toward camera (camera is at z=1400)
+    // Increment Z to move anaconda toward camera 
     g_demo_instances[0].pos_z = (int16_t)(g_demo_instances[0].pos_z + 24);
     g_demo_instances[0].pos_x = (int16_t)(g_demo_instances[0].pos_x - 2);
 
-    // Increment Z to move projectile toward camera (camera is at z=1400)
+    // Increment Z to move projectile toward camera
     g_demo_instances[1].pos_z = (int16_t)(g_demo_instances[1].pos_z + 48);
     g_demo_instances[1].pos_y = (int16_t)(g_demo_instances[1].pos_y + 2);
     g_demo_instances[1].roll  = (uint8_t)(g_demo_instances[1].roll + 4);
@@ -221,11 +221,11 @@ static void demo3_fly(void) {
 }
 
 static void demo3_ohno_fly(void) {
-    // Increment Z to move anaconda toward camera (camera is at z=1400)
+    // Increment Z to move anaconda toward camera 
     g_demo_instances[0].pos_z = (int16_t)(g_demo_instances[0].pos_z + 24);
     g_demo_instances[0].pos_x = (int16_t)(g_demo_instances[0].pos_x - 2);
 
-    // Increment Z to move second anaconda toward camera (camera is at z=1400)
+    // Increment Z to move second anaconda toward camera
     g_demo_instances[1].pos_z = (int16_t)(g_demo_instances[1].pos_z + 48);
     g_demo_instances[1].pos_y = (int16_t)(g_demo_instances[1].pos_x + 2);
     g_demo_instances[1].roll  = (uint8_t)(g_demo_instances[1].roll + 4);
@@ -284,8 +284,8 @@ static Model3D  g_d4_anaconda;
 
 static const SceneObjectParams demo4_init[] = {
     { .slot=1, .yaw=20, .pitch=10, .roll=0, .scale=160, .pos_x=-100, .pos_y=200, .pos_z=400 },
-    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=200, .pos_z=1400 },
-    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=200, .pos_z=1400 },     
+    { .slot=5, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=200, .pos_z=2400 },
+    { .slot=5, .yaw=9, .pitch=42, .roll=0, .scale=192, .pos_x=0, .pos_y=200, .pos_z=2400 },     
 };
 
 static void demo4_enter(void) {
@@ -369,7 +369,7 @@ static void demo5_enter(void) {
     GameContext *ctx = game_state_data();
     ctx->wireframe.camera.position.x = 0;
     ctx->wireframe.camera.position.y = 200;
-    ctx->wireframe.camera.position.z = 1400;
+    ctx->wireframe.camera.position.z = 2400;
     ctx->wireframe.camera.yaw   = 0;
     ctx->wireframe.camera.pitch = 0;
     ctx->wireframe.camera.roll  = 0;
@@ -382,7 +382,7 @@ static uint8_t demo5_orbit_angle;
 
 static void demo5_orbit(void) {
     // Circle-strafe around the scene center (0,0). Keep camera aimed at center.
-    const int16_t radius = 1000;
+    const int16_t radius = 1600;
     const int16_t center_x = 0;
     const int16_t center_z = 600;
 
@@ -444,7 +444,7 @@ static const Demo demo5 = {
 // Yaw rotation reverses direction on every bounce.
 // =============================================================================
 
-/* World-space bounce parameters (object fixed at BOING_Z, camera at z=1400)  *
+/* World-space bounce parameters (object fixed at BOING_Z, camera at z=2000)  *
  * At z=400 (view_z=1000) the projection scale is 160/1000 = 0.16 px/unit:    *
  *   screen_x = 160 + pos_x * 0.16   → ±700 ≈ screen left/right              *
  *   screen_y = 120 - (pos_y-200)*0.16 → Y=300 ≈ top,  Y=-300 ≈ bottom        */
