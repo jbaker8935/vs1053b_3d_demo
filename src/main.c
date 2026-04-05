@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
     // always close VGM on exit.
     vgm_close();
 
-    timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 1);  /* 1/T0_TICK_FREQ exit wait */
+    timer_t0_alarm_set(TIMER_ALARM_GENERAL0, 12 );  /* 12/T0_TICK_FREQ exit wait */
     while(true) {
         if (timer_t0_alarm_check(TIMER_ALARM_GENERAL0)) {
             break;
