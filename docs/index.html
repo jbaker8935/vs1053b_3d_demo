@@ -651,9 +651,9 @@ void app_init(void) {
     vgk_plugin_init();
     vs1053_dac_mute();
     vs1053_dac_interrupt_disable(); // Decoder RAM is being used.  
-    vgk_projection_params_init(120, 160, 120, -64);
+    vgk_projection_params_init(240, 160, 120, -128);
     vgk_model_slot_init(&g_model_cube, 0);
-    vgk_cam_params_set(0, 0, 0, 0, 200, 1400);
+    vgk_cam_params_set(0, 0, 0, 0, 200, 2400);
     vgk_hidden_line_enable();
     vgk_no_near_far_coloring = false;
 }
@@ -768,9 +768,9 @@ void app_init(void) {
     vgk_plugin_init();
     vs1053_dac_mute();
     vs1053_dac_interrupt_disable(); // Decoder RAM is being used.  
-    vgk_projection_params_init(120, 160, 120, -64);
+    vgk_projection_params_init(240, 160, 120, -128);
     vgk_model_slot_init(&g_model_cube, 0);
-    vgk_cam_params_set(0, 0, 0, 0, 200, 1400);
+    vgk_cam_params_set(0, 0, 0, 0, 200, 2400);
     vgk_hidden_line_enable();
 }
 
@@ -800,7 +800,7 @@ static uint8_t camera_yaw;
 
 static void camera_orbit(void) {
 
-    const int16_t radius = 1800;
+    const int16_t radius = 2400;
     const int16_t center_x = 0;
     const int16_t center_z = 0;
 
@@ -853,6 +853,9 @@ int main(int argc, char *argv[]) {
     getchar();
     return 0;
 }
+
+
+            
 </code></pre>
         </section>
 
