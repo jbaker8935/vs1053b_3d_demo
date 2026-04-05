@@ -15,7 +15,7 @@ static GameContext g_ctx __attribute__((section(".bss")));
 GameMode gameMode = STATE_DEMO;
 
 void reset_camera(void) {
-vec3_t cam_pos = {0, 200, 1400};
+vec3_t cam_pos = {0, 200, 2400};
 camera_init(&g_ctx.wireframe.camera, cam_pos);
 Camera *camera = &g_ctx.wireframe.camera;
 vgk_cam_params_set(
