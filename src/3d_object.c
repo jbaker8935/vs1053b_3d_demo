@@ -265,6 +265,160 @@ const Model3D g_model_truncated_octahedron = {
     .edge_face1 = to_edge_face1
 };
 
+/* truncated icosahedron (soccer ball)
+ * 60 vertices, 90 edges, 32 faces (12 pentagons + 20 hexagons).
+ * Faces 0-11 are pentagons, faces 12-31 are hexagons.
+ */
+
+#define TI_SCALE 5
+
+/* vertex coordinates: (0, ±1, ±3φ) and cyclic perms × TI_SCALE,
+ * (±1, ±(2+φ), ±2φ) and cyclic perms × TI_SCALE,
+ * (±2, ±(1+2φ), ±φ) and cyclic perms × TI_SCALE,
+ * with φ = (1+√5)/2 ≈ 1.618, values rounded to nearest integer.
+ */
+static const int16_t ti_vx[60] = {
+       0 * TI_SCALE,   20 * TI_SCALE,   97 * TI_SCALE,    0 * TI_SCALE,   20 * TI_SCALE,  -97 * TI_SCALE,    0 * TI_SCALE,  -20 * TI_SCALE,
+      97 * TI_SCALE,    0 * TI_SCALE,  -20 * TI_SCALE,  -97 * TI_SCALE,   20 * TI_SCALE,   72 * TI_SCALE,   65 * TI_SCALE,   20 * TI_SCALE,
+      72 * TI_SCALE,  -65 * TI_SCALE,   20 * TI_SCALE,  -72 * TI_SCALE,   65 * TI_SCALE,   20 * TI_SCALE,  -72 * TI_SCALE,  -65 * TI_SCALE,
+     -20 * TI_SCALE,   72 * TI_SCALE,   65 * TI_SCALE,  -20 * TI_SCALE,   72 * TI_SCALE,  -65 * TI_SCALE,  -20 * TI_SCALE,  -72 * TI_SCALE,
+      65 * TI_SCALE,  -20 * TI_SCALE,  -72 * TI_SCALE,  -65 * TI_SCALE,   40 * TI_SCALE,   85 * TI_SCALE,   32 * TI_SCALE,   40 * TI_SCALE,
+      85 * TI_SCALE,  -32 * TI_SCALE,   40 * TI_SCALE,  -85 * TI_SCALE,   32 * TI_SCALE,   40 * TI_SCALE,  -85 * TI_SCALE,  -32 * TI_SCALE,
+     -40 * TI_SCALE,   85 * TI_SCALE,   32 * TI_SCALE,  -40 * TI_SCALE,   85 * TI_SCALE,  -32 * TI_SCALE,  -40 * TI_SCALE,  -85 * TI_SCALE,
+      32 * TI_SCALE,  -40 * TI_SCALE,  -85 * TI_SCALE,  -32 * TI_SCALE
+};
+static const int16_t ti_vy[60] = {
+      20 * TI_SCALE,   97 * TI_SCALE,    0 * TI_SCALE,   20 * TI_SCALE,  -97 * TI_SCALE,    0 * TI_SCALE,  -20 * TI_SCALE,   97 * TI_SCALE,
+       0 * TI_SCALE,  -20 * TI_SCALE,  -97 * TI_SCALE,    0 * TI_SCALE,   72 * TI_SCALE,   65 * TI_SCALE,   20 * TI_SCALE,   72 * TI_SCALE,
+     -65 * TI_SCALE,   20 * TI_SCALE,  -72 * TI_SCALE,   65 * TI_SCALE,   20 * TI_SCALE,  -72 * TI_SCALE,  -65 * TI_SCALE,   20 * TI_SCALE,
+      72 * TI_SCALE,   65 * TI_SCALE,  -20 * TI_SCALE,   72 * TI_SCALE,  -65 * TI_SCALE,  -20 * TI_SCALE,  -72 * TI_SCALE,   65 * TI_SCALE,
+     -20 * TI_SCALE,  -72 * TI_SCALE,  -65 * TI_SCALE,  -20 * TI_SCALE,   85 * TI_SCALE,   32 * TI_SCALE,   40 * TI_SCALE,   85 * TI_SCALE,
+     -32 * TI_SCALE,   40 * TI_SCALE,  -85 * TI_SCALE,   32 * TI_SCALE,   40 * TI_SCALE,  -85 * TI_SCALE,  -32 * TI_SCALE,   40 * TI_SCALE,
+      85 * TI_SCALE,   32 * TI_SCALE,  -40 * TI_SCALE,   85 * TI_SCALE,  -32 * TI_SCALE,  -40 * TI_SCALE,  -85 * TI_SCALE,   32 * TI_SCALE,
+     -40 * TI_SCALE,  -85 * TI_SCALE,  -32 * TI_SCALE,  -40 * TI_SCALE
+};
+static const int16_t ti_vz[60] = {
+      97 * TI_SCALE,    0 * TI_SCALE,   20 * TI_SCALE,  -97 * TI_SCALE,    0 * TI_SCALE,   20 * TI_SCALE,   97 * TI_SCALE,    0 * TI_SCALE,
+     -20 * TI_SCALE,  -97 * TI_SCALE,    0 * TI_SCALE,  -20 * TI_SCALE,   65 * TI_SCALE,   20 * TI_SCALE,   72 * TI_SCALE,  -65 * TI_SCALE,
+      20 * TI_SCALE,   72 * TI_SCALE,   65 * TI_SCALE,   20 * TI_SCALE,  -72 * TI_SCALE,  -65 * TI_SCALE,   20 * TI_SCALE,  -72 * TI_SCALE,
+      65 * TI_SCALE,  -20 * TI_SCALE,   72 * TI_SCALE,  -65 * TI_SCALE,  -20 * TI_SCALE,   72 * TI_SCALE,   65 * TI_SCALE,  -20 * TI_SCALE,
+     -72 * TI_SCALE,  -65 * TI_SCALE,  -20 * TI_SCALE,  -72 * TI_SCALE,   32 * TI_SCALE,   40 * TI_SCALE,   85 * TI_SCALE,  -32 * TI_SCALE,
+      40 * TI_SCALE,   85 * TI_SCALE,   32 * TI_SCALE,   40 * TI_SCALE,  -85 * TI_SCALE,  -32 * TI_SCALE,   40 * TI_SCALE,  -85 * TI_SCALE,
+      32 * TI_SCALE,  -40 * TI_SCALE,   85 * TI_SCALE,  -32 * TI_SCALE,  -40 * TI_SCALE,   85 * TI_SCALE,   32 * TI_SCALE,  -40 * TI_SCALE,
+     -85 * TI_SCALE,  -32 * TI_SCALE,  -40 * TI_SCALE,  -85 * TI_SCALE
+};
+
+/* 90 edges */
+static const uint8_t ti_edge_a[90] = {
+      0,   0,   0,   1,   1,   1,   2,   2,   2,   3,
+      3,   3,   4,   4,   4,   5,   5,   5,   6,   6,
+      7,   7,   8,   8,   9,   9,  10,  10,  11,  11,
+     12,  12,  12,  13,  13,  13,  14,  14,  14,  15,
+     15,  15,  16,  16,  16,  17,  17,  17,  18,  18,
+     18,  19,  19,  19,  20,  20,  20,  21,  21,  21,
+     22,  22,  22,  23,  23,  23,  24,  24,  25,  25,
+     26,  26,  27,  27,  28,  28,  29,  29,  30,  30,
+     31,  31,  32,  32,  33,  33,  34,  34,  35,  35
+};
+static const uint8_t ti_edge_b[90] = {
+      6,  38,  41,   7,  36,  39,   8,  37,  40,   9,
+     44,  47,  10,  42,  45,  11,  43,  46,  50,  53,
+     48,  51,  49,  52,  56,  59,  54,  57,  55,  58,
+     24,  36,  38,  25,  36,  37,  26,  37,  38,  27,
+     39,  44,  28,  40,  42,  29,  41,  43,  30,  42,
+     50,  31,  43,  48,  32,  44,  49,  33,  45,  56,
+     34,  46,  54,  35,  47,  55,  41,  48,  39,  49,
+     40,  50,  47,  51,  45,  52,  46,  53,  53,  54,
+     51,  55,  52,  56,  57,  59,  57,  58,  58,  59
+};
+
+/* 32 face normals in Q14 object space.
+ * Faces 0-11:  pentagon normals — (±φ/√(1+φ²), 0, ±1/√(1+φ²)) and axis permutations.
+ * Faces 12-31: hexagon normals  — ±9459 (≈1/√3) triples, and ±15305/±5846 pairs.
+ */
+static const int16_t ti_face_nx[32] = {
+    -13937,  8614,     0,     0,     0, -8614, 13937, 13937,
+         0, -8614,  8614, -13937, 15305,  9459, -9459, -15305,
+     -5846, -9459,  9459,     0,  5846, 15305,  5846,  9459,
+    -15305, -9459,     0, -9459, -5846,  9459,     0,     0
+};
+static const int16_t ti_face_ny[32] = {
+         0, 13937,  8614,  8614, -8614, -13937,     0,     0,
+     -8614, 13937, -13937,     0,  5846, -9459, -9459, -5846,
+         0,  9459, -9459, -15305,     0, -5846,     0,  9459,
+      5846, -9459, 15305,  9459,     0,  9459, -15305, 15305
+};
+static const int16_t ti_face_nz[32] = {
+      8614,     0, -13937, 13937, 13937,     0,  8614, -8614,
+    -13937,     0,     0, -8614,     0,  9459,  9459,     0,
+     15305, -9459, -9459, -5846, -15305,     0, 15305,  9459,
+         0, -9459,  5846,  9459, -15305, -9459,  5846, -5846
+};
+
+/* Per-edge adjacent face indices */
+static const uint8_t ti_edge_face0[90] = {
+     16,   3,   3,  26,   1,   1,  12,   6,   6,  20,
+      2,   2,  19,  10,  10,  15,   0,   0,   4,   4,
+      9,   9,   7,   7,   8,   8,   5,   5,  11,  11,
+      3,  23,   3,   1,   1,  12,   6,   6,  22,   2,
+     29,   2,  10,  13,  10,   0,  16,   0,   4,  13,
+      4,   9,  24,   9,   7,  20,   7,   8,  18,   8,
+      5,  14,   5,  11,  17,  11,   3,  26,   1,  12,
+      6,  13,   2,  17,  10,  18,   0,  14,   4,  14,
+      9,  17,   7,  18,  19,   8,   5,  15,  11,  25
+};
+static const uint8_t ti_edge_face1[90] = {
+     22,  22,  16,  31,  26,  31,  21,  12,  21,  28,
+     20,  28,  30,  30,  19,  24,  24,  15,  22,  16,
+     26,  31,  12,  21,  20,  28,  30,  19,  24,  15,
+     26,  26,  23,  12,  23,  23,  22,  23,  23,  31,
+     31,  29,  21,  21,  13,  16,  27,  27,  30,  30,
+     13,  24,  27,  27,  20,  29,  29,  19,  19,  18,
+     15,  15,  14,  28,  28,  17,  27,  27,  29,  29,
+     13,  22,  17,  31,  18,  21,  14,  16,  14,  30,
+     17,  24,  18,  20,  25,  25,  25,  25,  25,  28
+};
+
+static const uint16_t ti_edge_color[90] = {
+    /*  0- 9 */ 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A,
+    /* 10-19 */ 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0707, 0x0707,
+    /* 20-29 */ 0x0707, 0x0707, 0x0707, 0x0707, 0x0707, 0x0707, 0x0707, 0x0707, 0x0707, 0x0707,
+    /* 30-39 */ 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707,
+    /* 40-49 */ 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A,
+    /* 50-59 */ 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707,
+    /* 60-69 */ 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0A0A,
+    /* 70-79 */ 0x0707, 0x0A0A, 0x0707, 0x0A0A, 0x0707, 0x0A0A, 0x0707, 0x0A0A, 0x0707, 0x0A0A,
+    /* 80-89 */ 0x0707, 0x0A0A, 0x0707, 0x0A0A, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0A0A,
+};
+
+const Model3D g_model_truncated_icosahedron = {
+    .vertex_count = 60,
+    .edge_count   = 90,
+    .center_x = 0,
+    .center_y = 0,
+    .center_z = 0,
+    .radius   = 99,
+
+    .object_color = 0x0D0B,
+
+    .vx = ti_vx,
+    .vy = ti_vy,
+    .vz = ti_vz,
+
+    .edge_a = ti_edge_a,
+    .edge_b = ti_edge_b,
+
+    .face_count = 32,
+    .face_nx = ti_face_nx,
+    .face_ny = ti_face_ny,
+    .face_nz = ti_face_nz,
+
+    .edge_face0 = ti_edge_face0,
+    .edge_face1 = ti_edge_face1,
+    .edge_color_count = 90,
+    .edge_color = ti_edge_color
+};
+
 
 void camera_init(Camera *cam, vec3_t pos) {
     cam->position = pos;

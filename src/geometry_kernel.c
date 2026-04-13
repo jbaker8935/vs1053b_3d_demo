@@ -26,8 +26,19 @@ const int16_t sin_table[256] = {
     -11585, -11297, -11003, -10702, -10394, -10080, -9760,  -9434,  -9102,  -8765,  -8423,  -8076,  -7723,  -7366,
     -7005,  -6639,  -6270,  -5897,  -5520,  -5139,  -4756,  -4370,  -3981,  -3590,  -3196,  -2801,  -2404,  -2006,
     -1606,  -1205,  -804,   -402,
-
+    
 };
+
+Model3D * slot_model[VGK_SAVE_SLOT_COUNT] = {NULL};
+static bool vgk_near_far_coloring = false;
+static bool vgk_scene_mode_active = false;
+
+void vgk_slot_model_set(const Model3D *model, uint8_t slot) {
+    if(slot >= VGK_SAVE_SLOT_COUNT) {
+        return;  // Invalid slot; do nothing
+    }
+    slot_model[slot] = (Model3D *)model;
+}
 
 void vgk_plugin_init(void) {
     vs1053_mem_write(VGK_STATUS, 0x0000);  // Clear status
@@ -87,7 +98,14 @@ void vgk_projection_disable(void) {
 }
 
 void vgk_model_vertices_init(const Model3D *model, uint8_t slot) {
-    uint16_t base = VGK_SAVE_AREA_X + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
+    uint16_t base = 0;
+    if (slot < 4) {
+        base = VGK_SAVE_AREA_X + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
+    } else if (slot < 6) {
+        base = VGK_SAVE_AREA_B + (uint16_t)(slot - 4) * VGK_SAVE_SLOT_SIZE;
+    } else {
+        return;  // Invalid slot; do nothing
+    }
     vs1053_mem_write(base + VGK_SLOT_N_VERTICES, model->vertex_count);
     vs1053_sci_write(SCI_WRAMADDR, base + VGK_SLOT_INPUT_VERT);
     for (uint8_t i = 0; i < model->vertex_count; ++i) {
@@ -97,24 +115,40 @@ void vgk_model_vertices_init(const Model3D *model, uint8_t slot) {
     }
 }
 
-// Tracks the active hidden-line state so get_screen_edges_full_asm can
-// choose the fast path (no OUTPUT_EDGES reads) when removal is disabled.
-// emit_edges_asm.s accesses it via .extern.
-bool vgk_no_near_far_coloring = false;
-bool vgk_hidden_line_active = false;
+static void vgk_descriptor_enable(bool enabled) {
+    vs1053_mem_write(VGK_ENABLE_DESCRIPTOR, enabled ? 0x0001 : 0x0000);
+}
+
+void vgk_near_far_coloring_enable(bool enabled) {
+    vgk_near_far_coloring = enabled;
+    if (enabled) {
+        vgk_descriptor_enable(true);
+    } else {
+        // don't disable descriptor if scene mode is active.
+        if (!vgk_scene_mode_active) {
+            vgk_descriptor_enable(false);
+        }
+    }
+}
 
 void vgk_hidden_line_disable(void) {
-    vgk_hidden_line_active = false;
     vs1053_mem_write(VGK_ENABLE_HIDDEN_LINE, 0x0000);
 }
 
 void vgk_hidden_line_enable(void) {
-    vgk_hidden_line_active = true;
     vs1053_mem_write(VGK_ENABLE_HIDDEN_LINE, 0x0001);
 }
 
 void vgk_model_hidden_line_init(const Model3D *model, uint8_t slot) {
-    uint16_t base = VGK_SAVE_AREA_X + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
+    uint16_t base = 0;
+    if (slot < 4) {
+        base = VGK_SAVE_AREA_X + (uint16_t) slot * VGK_SAVE_SLOT_SIZE;
+    } else if (slot < 6) {
+        base = VGK_SAVE_AREA_B + (uint16_t)(slot - 4) * VGK_SAVE_SLOT_SIZE;
+    } else {
+        return;  // Invalid slot; do nothing
+    }
+    
     uint8_t face_count = model->face_count;
 
     if (face_count > VGK_MAX_FACES) {
@@ -152,20 +186,28 @@ void vgk_model_hidden_line_init(const Model3D *model, uint8_t slot) {
     }
 
     // Store face count 
-    vs1053_mem_write(base + VGK_SLOT_N_FACES, face_count);
+    vs1053_mem_write(base + VGK_SLOT_N_FACES, face_count);   
 }
 
 void vgk_model_slot_init(const Model3D *model, uint8_t slot) {
     // Write geometry directly to the save slot
     // The kernel will copy from this slot to the
     // active working area when the object is first used in a scene.
+    vgk_slot_model_set(model, slot);  
     vgk_model_vertices_init(model, slot);
     vgk_model_edges_init(model, slot);
     vgk_model_hidden_line_init(model, slot);
 }
 
 void vgk_model_edges_init(const Model3D *model, uint8_t slot) {
-    uint16_t base = VGK_SAVE_AREA_X + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
+    uint16_t base = 0;
+    if (slot < 4) {
+        base = VGK_SAVE_AREA_X + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
+    } else if (slot < 6) {
+        base = VGK_SAVE_AREA_B + (uint16_t)(slot - 4) * VGK_SAVE_SLOT_SIZE;
+    } else {
+        return;  // Invalid slot; do nothing
+    }
     vs1053_mem_write(base + VGK_SLOT_N_EDGES, model->edge_count);
     vs1053_sci_write(SCI_WRAMADDR, base + VGK_SLOT_EDGE_LIST);
     for (uint8_t i = 0; i < model->edge_count; ++i) {
@@ -223,6 +265,9 @@ uint8_t vgk_wait_complete(uint16_t timeout_ms) {
     volatile uint16_t raw_status = 0;
     while (elapsed < timeout_ms) {
         raw_status = vs1053_mem_read(VGK_STATUS);
+        // textPrint("Status: ");
+        // textPrintUInt(raw_status);
+        // textPrint("\n");
 
         if (raw_status == VGK_STATUS_DONE) {
             return 1;  // Complete
@@ -244,49 +289,6 @@ uint8_t vgk_wait_complete(uint16_t timeout_ms) {
     return 0;  // Timeout
 }
 
-uint16_t screen_x[VGK_MAX_VERTICES];
-uint16_t clip_verts_x[VGK_MAX_VERTICES];
-uint16_t screen_y[VGK_MAX_VERTICES];
-uint8_t screen_y8[VGK_MAX_VERTICES];
-uint16_t clip_verts_y[VGK_MAX_VERTICES];
-
-// Coordinate arrays for the direct-emit path (get_screen_edges_with_depth).
-
-uint8_t scr_x_lo[VGK_MAX_VERTICES];  // screen X low  bytes — for original vertices
-uint8_t scr_x_hi[VGK_MAX_VERTICES];  // screen X high bytes
-uint8_t scr_y[VGK_MAX_VERTICES];     // screen Y        (only low byte used)
-uint8_t clip_x_lo[16];                   // clip   X low  bytes — for clipped vertices
-uint8_t clip_x_hi[16];                   // clip   X high bytes
-uint8_t clip_y[16];                      // clip   Y
-int16_t zbuffer[VGK_MAX_VERTICES];
-int16_t depth_metric[VGK_MAX_VERTICES];
-uint16_t scene_screen_x[VGK_SCENE_MAX_VERTS];
-uint16_t scene_screen_y[VGK_SCENE_MAX_VERTS];
-int16_t scene_clip_x[VGK_SCENE_MAX_CLIPS];
-int16_t scene_clip_y[VGK_SCENE_MAX_CLIPS];
-
-// Zero-page parameter block for get_screen_edges_full_asm.
-// Defined here so the optimizer sees their ZP cost when deciding
-// whether other variables can be autopromoted — preventing ZP overflow.
-// g_emit_layer_ctrl is computed entirely in asm but defined here for the same reason.
-uint8_t __zp g_emit_edge_count;
-uint8_t __zp g_emit_visible_count;
-uint8_t __zp g_emit_n_input;
-uint8_t __zp g_emit_n_clip;
-uint8_t __zp g_emit_near_color;
-uint8_t __zp g_emit_far_color;
-uint8_t __zp g_emit_layer_ctrl;
-
-// ZP pointers used by get_screen_edges_full_asm fast path.
-const uint8_t * __zp g_emit_edge_a;
-const uint8_t * __zp g_emit_edge_b;
-
-// Per-frame edge buffer shared between get_screen_edges_full_asm and scene_get_screen_edges.
-// emit_edges_asm.s declares them via .extern.
-uint16_t g_edge_buf_packed[VGK_MAX_EDGES];
-uint8_t  g_edge_buf_flags[VGK_MAX_EDGES];
-
-extern uint8_t vgk_scrn_edges_get_asm(uint8_t layer);
 
 // -----------------------------------------------------------------------------
 // State capture helper
@@ -307,7 +309,7 @@ void vgk_plugin_capture_state(PluginCapture *cap) {
 
     // matrix (Y-RAM contiguous)
     uint16_t addr = VGK_MATRIX_BASE;
-    for (int i = 0; i < 12; ++i) {
+    for (uint8_t i = 0; i < 12; ++i) {
         cap->matrix[i] = (int16_t)vs1053_mem_read(addr++);
     }
 
@@ -320,133 +322,75 @@ void vgk_plugin_capture_state(PluginCapture *cap) {
     // counts / status
     cap->n_vertices = vs1053_mem_read(VGK_N_VERTICES);
     cap->n_edges = vs1053_mem_read(VGK_N_EDGES);
-    cap->n_output_edges = vs1053_mem_read(VGK_N_OUTPUT_EDGES);
-    cap->n_clip_verts = vs1053_mem_read(VGK_N_CLIP_VERTS);
+    cap->n_output_edges = vs1053_mem_read(VGK_N_STREAM_EDGES);
     cap->status = vs1053_mem_read(VGK_STATUS);
 
-    // sample output edge list 
-    {
-        uint16_t n = cap->n_output_edges < CAPTURE_MAX_EDGES ? cap->n_output_edges : CAPTURE_MAX_EDGES;
-        for (int i = 0; i < (int)n; ++i) {
-            cap->edge_list[i]  = vs1053_mem_read(VGK_OUTPUT_EDGE_PACKED + (uint16_t)i);
-            uint16_t fw = vs1053_mem_read(VGK_OUTPUT_EDGE_FLAGS + (uint16_t)(i >> 1));
-            cap->edge_flags[i] = (uint8_t)((i & 1) ? (fw >> 8) : (fw & 0xFF));
-        }
-    }
-
-    // sample clipped screen coords
-    {
-        uint16_t base = VGK_CLIP_SCREEN;
-        for (int i = 0; i < cap->n_clip_verts && i < CAPTURE_MAX_CLIP_V; ++i) {
-            cap->clip_screen[i * 2 + 0] = vs1053_mem_read(base + (uint16_t)(i * 2));
-            cap->clip_screen[i * 2 + 1] = vs1053_mem_read(base + (uint16_t)(i * 2 + 1));
-        }
-    }
 }
 
-/* vgk_scrn_edges_with_depth_get: Retrieves and emits line edges to the screen
+void vgk_line_draw(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color, uint8_t layer) {
+    POKE(DL_COLOR, color);
+    POKE(DL_MODE, 0x01); 
+    POKE(DL_CONTROL, (layer << 2) | 0x01); // enable + no clock        
+    POKEW(DL_X0, x0);
+    POKEW(DL_X1, x1);
+    POKEW(DL_Y,  y1<<8 | y0);
+    POKE(DL_CONTROL, (layer << 2) | 0x03); // enable + clock
+    while (PEEK(DL_FIFO_LO) | PEEK(DL_FIFO_HI)) {
+        // wait for FIFO to empty before writing next edge
+    }
+    POKE(DL_CONTROL, 0x00);
+    POKE(DL_MODE, 0x00);
+}
+
+/* vgk_scrn_edges_get: Uses new stream edge reads
+ * 
  */
 __attribute__((noinline))
-uint8_t vgk_scrn_edges_with_depth_get(Model3D *model, uint8_t layer) {
-    uint8_t ec = model->edge_count;
-    if (ec > VGK_MAX_EDGES) ec = VGK_MAX_EDGES;
-    uint8_t near_color = (uint8_t)(model->object_color & 0x00FF);
-    uint8_t far_color  = (uint8_t)(model->object_color >> 8);
-    if (vgk_no_near_far_coloring) far_color = near_color;
-    g_emit_n_input       = model->vertex_count;
-    g_emit_edge_count    = ec;
-    g_emit_near_color    = near_color;
-    g_emit_far_color     = far_color;
-    g_emit_visible_count = 0;
-    g_emit_edge_a        = model->edge_a;
-    g_emit_edge_b        = model->edge_b;
-    return vgk_scrn_edges_get_asm(layer);
-}
+uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
 
-/* vgk_scrn_edges_get: *legacy* reader that only retrieves edge screen vertices and saves
- * the data in the global line list used by draw_lines_asm.
- * Does not support near/far coloring. color argument sets the object color
- */
-uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
-    // Read number of input vertices (needed to distinguish original vs clipped)
-
-    uint8_t edges_written = 0;
-    uint8_t start_line_count = g_line_count;
-
-    volatile uint8_t n_input = model->vertex_count;  // use model definition
-
+    bool has_descriptors = (vs1053_mem_read(VGK_ENABLE_DESCRIPTOR) != 0);
+    
+    POKE(DL_COLOR, default_color);
+    POKE(DL_MODE, 0x01); 
     // Read number of output edges
-    volatile uint8_t edge_count = vs1053_mem_read(VGK_N_OUTPUT_EDGES);
-
-    vs1053_sci_write(SCI_WRAMADDR, VGK_SCREEN_COORDS);
-    for (uint8_t i = 0; i < n_input; ++i) {
-        screen_x[i] = vs1053_sci_read(SCI_WRAM);
-        screen_y[i] = vs1053_sci_read(SCI_WRAM) & 0x00FF;
-    }
-
-    // Read all clip screen coords in one burst (if any)
-    uint8_t n_clip = vs1053_mem_read(VGK_N_CLIP_VERTS);
-
-    {
-        if (n_clip > 16)
-            n_clip = 16;  // safety 
-        int16_t clip_sx[16] = {0};
-        int16_t clip_sy[16] = {0};
-        if (n_clip > 0) {
-            vs1053_sci_write(SCI_WRAMADDR, VGK_CLIP_SCREEN);
-            for (uint8_t i = 0; i < n_clip; ++i) {
-                clip_sx[i] = (int16_t)vs1053_sci_read(SCI_WRAM);
-                clip_sy[i] = (int16_t)vs1053_sci_read(SCI_WRAM);
+    uint16_t edge_count = vs1053_mem_read(VGK_N_STREAM_EDGES);
+    
+    // textPrint("Edges: ");
+    // textPrintUInt(edge_count);
+    // textPrint("\n");
+    for (uint16_t e = 0; e < edge_count; ++e) {
+        POKE(DL_CONTROL, (layer << 2) | 0x01); // enable + no clock        
+        // unused for now.
+        if(has_descriptors) {
+            uint16_t desc = vs1053_sci_read(SCI_WRAM); //(bit15=near, bit14=scene temporary, bits8-13=slot, bits0-7=edge_idx)
+            uint8_t slot= (desc & 0x3F00) >> 8;
+            uint8_t edge_idx = desc & 0x00FF;
+            if(slot_model[slot]->edge_color_count > 0) {
+                uint16_t edge_color = slot_model[slot]->edge_color[edge_idx];             
+                POKE(DL_COLOR, desc & 0x8000 ? edge_color&0xFF : edge_color>>8); // near = low byte, far = high byte
+            } else {
+                if(vgk_near_far_coloring) {
+                    uint16_t object_color = slot_model[slot]->object_color;
+                    POKE(DL_COLOR, desc & 0x8000 ? object_color&0xFF : object_color>>8); // near = low byte, far = high byte
+                }
             }
         }
-
-        // Burst-read all flags from VGK_OUTPUT_EDGE_FLAGS,
-        {
-            uint8_t n_flag_words = (edge_count + 1) >> 1;
-            vs1053_sci_write(SCI_WRAMADDR, VGK_OUTPUT_EDGE_FLAGS);
-            for (uint8_t i = 0; i < n_flag_words; ++i) {
-                uint16_t fw = vs1053_sci_read(SCI_WRAM);
-                g_edge_buf_flags[i * 2]     = (uint8_t)(fw & 0xFF);
-                if ((uint8_t)(i * 2 + 1) < edge_count)
-                    g_edge_buf_flags[i * 2 + 1] = (uint8_t)(fw >> 8);
-            }
-
-            for (uint8_t e = 0; e < edge_count; ++e) {
-                uint8_t flags = g_edge_buf_flags[e];
-                if (!(flags & VGK_EDGE_VISIBLE))
-                    continue;
-
-                uint16_t packed = vs1053_mem_read(VGK_OUTPUT_EDGE_PACKED + e);
-                uint8_t v0 = (uint8_t)(packed & 0xFF);
-                uint8_t v1 = (uint8_t)(packed >> 8);
-
-                int16_t sx0, sy0, sx1, sy1;
-                if (v0 < n_input) {
-                    sx0 = (int16_t)screen_x[v0];
-                    sy0 = (int16_t)screen_y[v0];
-                } else {
-                    uint8_t ci = v0 - n_input;
-                    if (ci < n_clip) { sx0 = clip_sx[ci]; sy0 = clip_sy[ci]; }
-                    else             { sx0 = 0; sy0 = 0; }
-                }
-
-                if (v1 < n_input) {
-                    sx1 = (int16_t)screen_x[v1];
-                    sy1 = (int16_t)screen_y[v1];
-                } else {
-                    uint8_t ci = v1 - n_input;
-                    if (ci < n_clip) { sx1 = clip_sx[ci]; sy1 = clip_sy[ci]; }
-                    else             { sx1 = 0; sy1 = 0; }
-                }
-
-                add_line_to_list((uint16_t)sx0, (uint8_t)sy0, (uint16_t)sx1, (uint8_t)sy1, color);
-            }
+        uint16_t x0 = vs1053_sci_read(SCI_WRAM);
+        uint16_t x1 = vs1053_sci_read(SCI_WRAM);
+        uint16_t y = vs1053_sci_read(SCI_WRAM);
+        POKEW(DL_X0, x0);
+        POKEW(DL_X1, x1);
+        POKEW(DL_Y,  y);
+        POKE(DL_CONTROL, (layer << 2) | 0x03); // enable + clock
+        while (PEEK(DL_FIFO_LO) | PEEK(DL_FIFO_HI)) {
+            // wait for FIFO to empty before writing next edge
         }
-    }
 
-    edges_written = g_line_count - start_line_count;
-    // Return actual number of visible edges written
-    return edges_written;
+    }
+    POKE(DL_CONTROL, 0x00);
+    POKE(DL_MODE, 0x00);
+ 
+    return edge_count;
 }
 
 #if 1  // enabled
@@ -460,12 +404,17 @@ uint8_t vgk_scrn_edges_get(Model3D *model, uint8_t color) {
 //
 // Work in progress.  Not optimized.
 
-void vgk_scene_enable(void) {
-    vs1053_mem_write(VGK_SCENE_ENABLE, 0x0001);
-}
-
-void vgk_scene_disable(void) {
-    vs1053_mem_write(VGK_SCENE_ENABLE, 0x0000);
+void vgk_scene_enable(bool enabled) {
+    vgk_scene_mode_active = enabled;
+    vs1053_mem_write(VGK_SCENE_ENABLE, enabled ? 0x0001 : 0x0000);
+    if (enabled) {
+        vgk_descriptor_enable(true);
+    } else {
+        // don't disable descriptor if near_far_coloring mode is active.
+        if (!vgk_near_far_coloring) {
+            vgk_descriptor_enable(false);
+        }
+    }    
 }
 
 void vgk_scene_no_occlusion_enable(void) {
@@ -554,70 +503,24 @@ uint16_t vgk_scene_obj_edge_count_get(uint8_t index) {
 }
 
 
-uint16_t vgk_scene_read_screen_coords(uint16_t *sx_out, uint16_t *sy_out,
-                                   uint16_t max_verts) {
-    uint16_t total = vs1053_mem_read(VGK_SCENE_TOTAL_VERTS);
-    if (total > max_verts) {
-        total = max_verts;
-    }
-    if (total > VGK_SCENE_MAX_VERTS) {
-        total = VGK_SCENE_MAX_VERTS;
-    }
-    vs1053_sci_write(SCI_WRAMADDR, VGK_SCENE_SCREEN_COORDS);
-    for (uint16_t i = 0; i < total; ++i) {
-        sx_out[i] = vs1053_sci_read(SCI_WRAM);
-        sy_out[i] = vs1053_sci_read(SCI_WRAM);
-    }
-    return total;
-}
-
-uint16_t vgk_scene_read_output_edges(uint16_t *packed_out, uint16_t *flags_out,
-                                  uint16_t max_edges) {
-    uint16_t total = vs1053_mem_read(VGK_SCENE_TOTAL_EDGES);
-    if (total > max_edges) {
-        total = max_edges;
-    }
-    if (total > VGK_SCENE_MAX_EDGES) {
-        total = VGK_SCENE_MAX_EDGES;
-    }
-    vs1053_sci_write(SCI_WRAMADDR, VGK_SCENE_OUTPUT_EDGES);
-    for (uint16_t i = 0; i < total; ++i) {
-        packed_out[i] = vs1053_sci_read(SCI_WRAM);
-        flags_out[i]  = vs1053_sci_read(SCI_WRAM);
-    }
-    return total;
-}
-
-uint16_t vgk_scene_read_clip_screen(int16_t *sx_out, int16_t *sy_out,
-                                 uint16_t max_clips) {
-    uint16_t total = vs1053_mem_read(VGK_SCENE_TOTAL_CLIPS);
-    if (total > max_clips) {
-        total = max_clips;
-    }
-    if (total > VGK_SCENE_MAX_CLIPS) {
-        total = VGK_SCENE_MAX_CLIPS;
-    }
-    vs1053_sci_write(SCI_WRAMADDR, VGK_SCENE_CLIP_SCREEN);
-    for (uint16_t i = 0; i < total; ++i) {
-        sx_out[i] = (int16_t)vs1053_sci_read(SCI_WRAM);
-        sy_out[i] = (int16_t)(vs1053_sci_read(SCI_WRAM) & 0x00FF);
-    }
-    return total;
-}
-
 uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
                                 const SceneObjectParams *objects,
                                 uint8_t near_color, uint8_t far_color,
                                 uint8_t draw_layer) {
+
+    // incomplete implementation. one color
+
+    uint16_t edges_written = 0;
     // Write the scene descriptor and trigger the kernel in scene mode.
-    vgk_scene_enable();
+    vgk_scene_enable(true);
     if (objects != NULL) {
         vgk_scene_set_descriptor(n_objects, objects);
     }
     vgk_trigger();
 
-    if (vgk_wait_complete(2000) != 1) {
-        vgk_scene_disable();
+    if (vgk_wait_complete(10000) != 1) {
+        vgk_scene_enable(false);
+        textPrint("Error: Geometry kernel timeout or error.\n");
         return 0;  // timeout or error
     }
 
@@ -625,123 +528,9 @@ uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
     SceneResult res;
     vgk_scene_get_result(&res);
 
-    uint16_t n_verts = res.total_verts;
-    uint16_t n_clips = res.total_clips;
+    edges_written = vgk_scrn_edges_get(draw_layer, near_color);
 
-    if (n_verts > VGK_SCENE_MAX_VERTS) n_verts = VGK_SCENE_MAX_VERTS;
-    if (n_clips > VGK_SCENE_MAX_CLIPS) n_clips = VGK_SCENE_MAX_CLIPS;
-
-    if (n_verts > 0) {
-        vs1053_sci_write(SCI_WRAMADDR, VGK_SCENE_SCREEN_COORDS);
-        for (uint16_t i = 0; i < n_verts; ++i) {
-            scene_screen_x[i] = vs1053_sci_read(SCI_WRAM);
-            scene_screen_y[i] = vs1053_sci_read(SCI_WRAM);
-        }
-    }
-
-    if (n_clips > 0) {
-        vs1053_sci_write(SCI_WRAMADDR, VGK_SCENE_CLIP_SCREEN);
-        for (uint16_t i = 0; i < n_clips; ++i) {
-            scene_clip_x[i] = (int16_t)vs1053_sci_read(SCI_WRAM);
-            scene_clip_y[i] = (int16_t)(vs1053_sci_read(SCI_WRAM) & 0x00FF);
-        }
-    }
-
-    /* Yield to callback for audio */
-    vgk_yield();
-
-    uint8_t edges_written = 0;
-
-    // Process each object's edges from the combined scene output.
-    for (uint8_t obj = 0; obj < res.n_objects; ++obj) {
-
-        // Read this object's output edges from the combined edge buffer.
-        uint16_t e_off = vgk_scene_obj_edge_offset_get(obj);
-        uint16_t e_cnt = vgk_scene_obj_edge_count_get(obj);
-        if (e_cnt > VGK_MAX_EDGES) e_cnt = VGK_MAX_EDGES;
-
-        // Read this object's output edges into the local buffer (one SCI burst).
-        vs1053_sci_write(SCI_WRAMADDR,
-                         VGK_SCENE_OUTPUT_EDGES + e_off * 2);
-        for (uint16_t e = 0; e < e_cnt; ++e) {
-            g_edge_buf_packed[e] = vs1053_sci_read(SCI_WRAM);
-            g_edge_buf_flags[e]  = (uint8_t)(vs1053_sci_read(SCI_WRAM) & 0x00FF);
-        }
-
-        // Far pass: draw edges with NEAR flag clear so they land underneath.
-        for (uint16_t e = 0; e < e_cnt; ++e) {
-            uint8_t flags = g_edge_buf_flags[e];
-            if (!(flags & VGK_EDGE_VISIBLE)) continue;
-            if (flags & VGK_EDGE_NEAR) continue;
-
-            uint16_t packed = g_edge_buf_packed[e];
-            uint8_t v0 = packed & 0xFF;
-            uint8_t v1 = (packed >> 8) & 0xFF;
-
-            int16_t sx0, sy0, sx1, sy1;
-
-            if (flags & VGK_EDGE_CLIP_V0) {
-                if (v0 < n_clips) { sx0 = scene_clip_x[v0]; sy0 = scene_clip_y[v0]; }
-                else              { sx0 = 0; sy0 = 0; }
-            } else {
-                if (v0 < n_verts) { sx0 = (int16_t)scene_screen_x[v0]; sy0 = (int16_t)(scene_screen_y[v0] & 0x00FF); }
-                else              { sx0 = 0; sy0 = 0; }
-            }
-            if (flags & VGK_EDGE_CLIP_V1) {
-                if (v1 < n_clips) { sx1 = scene_clip_x[v1]; sy1 = scene_clip_y[v1]; }
-                else              { sx1 = 0; sy1 = 0; }
-            } else {
-                if (v1 < n_verts) { sx1 = (int16_t)scene_screen_x[v1]; sy1 = (int16_t)(scene_screen_y[v1] & 0x00FF); }
-                else              { sx1 = 0; sy1 = 0; }
-            }
-
-            add_line_to_list((uint16_t)sx0, (uint8_t)sy0,
-                             (uint16_t)sx1, (uint8_t)sy1, far_color);
-            ++edges_written;
-        }
-        if (g_line_count > 0) { draw_lines_asm(draw_layer); reset_line_list(); }
-
-        // Near pass: draw edges with NEAR flag set on top of the far edges.
-        for (uint16_t e = 0; e < e_cnt; ++e) {
-            uint8_t flags = g_edge_buf_flags[e];
-            if (!(flags & VGK_EDGE_VISIBLE)) continue;
-            if (!(flags & VGK_EDGE_NEAR)) continue;
-
-            uint16_t packed = g_edge_buf_packed[e];
-            uint8_t v0 = packed & 0xFF;
-            uint8_t v1 = (packed >> 8) & 0xFF;
-
-            int16_t sx0, sy0, sx1, sy1;
-
-            if (flags & VGK_EDGE_CLIP_V0) {
-                if (v0 < n_clips) { sx0 = scene_clip_x[v0]; sy0 = scene_clip_y[v0]; }
-                else              { sx0 = 0; sy0 = 0; }
-            } else {
-                if (v0 < n_verts) { sx0 = (int16_t)scene_screen_x[v0]; sy0 = (int16_t)(scene_screen_y[v0] & 0x00FF); }
-                else              { sx0 = 0; sy0 = 0; }
-            }
-            if (flags & VGK_EDGE_CLIP_V1) {
-                if (v1 < n_clips) { sx1 = scene_clip_x[v1]; sy1 = scene_clip_y[v1]; }
-                else              { sx1 = 0; sy1 = 0; }
-            } else {
-                if (v1 < n_verts) { sx1 = (int16_t)scene_screen_x[v1]; sy1 = (int16_t)(scene_screen_y[v1] & 0x00FF); }
-                else              { sx1 = 0; sy1 = 0; }
-            }
-
-            add_line_to_list((uint16_t)sx0, (uint8_t)sy0,
-                             (uint16_t)sx1, (uint8_t)sy1, near_color);
-            ++edges_written;
-        }
-        if (g_line_count > 0) {
-            draw_lines_asm(draw_layer);
-            reset_line_list();
-        }
-
-        /* Yield between objects */
-        vgk_yield();
-    }
-
-    vgk_scene_disable();
+    vgk_scene_enable(false);
     return edges_written;
 }
 

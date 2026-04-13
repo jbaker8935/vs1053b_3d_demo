@@ -167,7 +167,7 @@ SINGLE_NAME := single_object
 SINGLE_SRC := examples/single_object.c
 SINGLE_OBJ := $(BUILD_DIR)/$(SINGLE_NAME).o
 SINGLE_ASM := $(BUILD_DIR)/$(SINGLE_NAME).s
-SINGLE_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/draw_line.o $(BUILD_DIR)/draw_lines_asm.o $(BUILD_DIR)/emit_edges_asm.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+SINGLE_DEPS := $(BUILD_DIR)/3d_object.o  $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
 SINGLE_OBJS := $(SINGLE_OBJ) $(SINGLE_DEPS)
 # Separate overlay output dir for single_object (only plugin_data, no other assets)
 SINGLE_OVERLAY_DIR := $(BUILD_DIR)/so
@@ -254,7 +254,7 @@ MULTI_NAME := multi_object_scene
 MULTI_SRC := examples/multi_object_scene.c
 MULTI_OBJ := $(BUILD_DIR)/$(MULTI_NAME).o
 MULTI_ASM := $(BUILD_DIR)/$(MULTI_NAME).s
-MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/draw_line.o $(BUILD_DIR)/draw_lines_asm.o $(BUILD_DIR)/emit_edges_asm.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
 MULTI_OBJS := $(MULTI_OBJ) $(MULTI_DEPS)
 # Separate overlay output dir for multi_object_scene (only plugin_data, no other assets)
 MULTI_OVERLAY_DIR := $(BUILD_DIR)/mo

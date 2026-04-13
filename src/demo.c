@@ -182,7 +182,7 @@ void demo_engine_render(uint8_t draw_layer) {
             vgk_reset();
             vgk_trigger();
             vgk_wait_complete(10000);
-            vgk_scrn_edges_with_depth_get((Model3D *)g_demo_models[i], draw_layer);
+            vgk_scrn_edges_get(draw_layer, 0x0B);
             vgk_yield(); /* service audio after per-object SCI readback */
         }
     }

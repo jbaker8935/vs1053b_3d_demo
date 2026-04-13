@@ -13,9 +13,9 @@
 // I-RAM Plugin Entry (WRAMADDR = DSP address + 0x8000)
 #define HOST_GEOM_PLUGIN_ENTRY  0x8050  // DSP: 0x0050
 
-#define VGK_MAX_VERTICES  32
-#define VGK_MAX_EDGES     36
-#define VGK_MAX_FACES     16
+#define VGK_MAX_VERTICES  60
+#define VGK_MAX_EDGES     90
+#define VGK_MAX_FACES     32
 #define VGK_INVALID_FACE  0xFF
 // Input Parameters (X-RAM)
 #define VGK_N_VERTICES    0x1800  // Number of vertices (16-bit)
@@ -55,11 +55,11 @@
 #define VGK_CAM_TRIG      VGK_CAM_SX
 
 // Input/Output Buffers
-#define VGK_INPUT_VERT    0x1818  // Input vertices (X-RAM)
-#define VGK_OUTPUT_VERT   0x580C  // Output vertices (Y-RAM)
+#define VGK_INPUT_VERT    0x0F00  // Input vertices (X-RAM)
+#define VGK_OUTPUT_VERT   0x500C  // Output vertices (Y-RAM)
 
 // Matrix storage (Y-RAM) - 3x4 = 12 words
-#define VGK_MATRIX_BASE   0x5800  // Final composite matrix
+#define VGK_MATRIX_BASE   0x5000  // Final composite matrix
 #define VGK_TEMP_OBJ      0x1EDA  // Object matrix temp (12 words, X-RAM)
 #define VGK_TEMP_CAM      0x5860  // Camera matrix temp (12 words, Y-RAM)
 
@@ -78,11 +78,11 @@
 #define VGK_N_EDGES         VGK_X_FREE_BASE         // Number of input edges (X-RAM)
 #define VGK_EDGE_LIST       (VGK_X_FREE_BASE + 1)   // Edge list (packed): [v0_low | v1_high] × n (1 word per edge)
 // Edge list ends at (VGK_X_FREE_BASE + 0x24) inclusive (max 36 edges) 
-#define VGK_MAX_INPUT_EDGES 36  // Maximum allowed input edges (match output edge capacity)
+#define VGK_MAX_INPUT_EDGES 90  // Maximum allowed input edges (match output edge capacity)
 
 // Per-edge adjacent face map (packed): low byte = face0, high byte = face1.
 // Use 0xFF for "no adjacent face" (boundary edge).
-#define VGK_EDGE_FACE_MAP   (VGK_X_FREE_BASE + 0x25) // 36 words, one per input edge
+#define VGK_EDGE_FACE_MAP   (VGK_X_FREE_BASE + 0x5B) // 90 words, one per input edge; ends +0xB4
 
 // Status and Projection Parameters 
 
@@ -92,58 +92,52 @@
 #define VGK_STATUS_SAVE_ERROR   0xE201
 #define VGK_STATUS_LOAD_ERROR   0xE202
 
-#define VGK_LR0_SAVE        (VGK_X_FREE_BASE + 0xA2)  // Save/restore LR0 (X-RAM)
-#define VGK_STATUS          (VGK_X_FREE_BASE + 0xA3)  // 0=idle, 1=busy, 0xABCD=done (X-RAM)
-#define VGK_ENABLE_PROJECT  (VGK_X_FREE_BASE + 0xA4)  // Non-zero to enable projection
-#define VGK_ENABLE_CLIP     (VGK_X_FREE_BASE + 0xA5)  // Non-zero to enable clipping
-#define VGK_PROJ_FOCAL      (VGK_X_FREE_BASE + 0xA6)  // Focal length (Q0, = half_w for 90 deg FOV)
-#define VGK_PROJ_HALF_W     (VGK_X_FREE_BASE + 0xA7)  // Half screen width (Q0, e.g., 160)
-#define VGK_PROJ_HALF_H     (VGK_X_FREE_BASE + 0xA8)  // Half screen height (Q0, e.g., 120)
-#define VGK_PROJ_NEAR_Z     (VGK_X_FREE_BASE + 0xA9)  // Near plane Z (Q0, negative, e.g., -256)
-#define VGK_SCRATCH0        (VGK_X_FREE_BASE + 0xAA)  // General scratch (X-RAM)
-#define VGK_SCRATCH1        (VGK_X_FREE_BASE + 0xAB)  // General scratch (X-RAM)
-#define VGK_LR0_SAVE2       (VGK_X_FREE_BASE + 0xAC)  // Save/restore LR0 (X-RAM)
-#define VGK_LR0_SAVE3       (VGK_X_FREE_BASE + 0xAD)  // Save/restore LR0 (X-RAM)
-#define VGK_ENABLE_HIDDEN_LINE (VGK_X_FREE_BASE + 0xAE) // Non-zero enables face-normal hidden-line culling
-#define VGK_N_FACES            (VGK_X_FREE_BASE + 0xAF) // Number of face normals provided
+#define VGK_LR0_SAVE        (VGK_X_FREE_BASE + 0xB5)  // Save/restore LR0 (X-RAM)
+#define VGK_STATUS          (VGK_X_FREE_BASE + 0xB6)  // 0=idle, 1=busy, 0xABCD=done (X-RAM)
+#define VGK_ENABLE_PROJECT  (VGK_X_FREE_BASE + 0xB7)  // Non-zero to enable projection
+#define VGK_ENABLE_CLIP     (VGK_X_FREE_BASE + 0xB8)  // Non-zero to enable clipping
+#define VGK_PROJ_FOCAL      (VGK_X_FREE_BASE + 0xB9)  // Focal length (Q0, = half_w for 90 deg FOV)
+#define VGK_PROJ_HALF_W     (VGK_X_FREE_BASE + 0xBA)  // Half screen width (Q0, e.g., 160)
+#define VGK_PROJ_HALF_H     (VGK_X_FREE_BASE + 0xBB)  // Half screen height (Q0, e.g., 120)
+#define VGK_PROJ_NEAR_Z     (VGK_X_FREE_BASE + 0xBC)  // Near plane Z (Q0, negative, e.g., -256)
+#define VGK_SCRATCH0        (VGK_X_FREE_BASE + 0xBD)  // General scratch (X-RAM)
+#define VGK_SCRATCH1        (VGK_X_FREE_BASE + 0xBE)  // General scratch (X-RAM)
+#define VGK_LR0_SAVE2       (VGK_X_FREE_BASE + 0xBF)  // Save/restore LR0 (X-RAM)
+#define VGK_LR0_SAVE3       (VGK_X_FREE_BASE + 0xC0)  // Save/restore LR0 (X-RAM)
+#define VGK_ENABLE_HIDDEN_LINE (VGK_X_FREE_BASE + 0xC1) // Non-zero enables face-normal hidden-line culling
+#define VGK_N_FACES            (VGK_X_FREE_BASE + 0xC2) // Number of face normals provided
+#define VGK_ENABLE_DESCRIPTOR  (VGK_X_FREE_BASE + 0xC3) // Non-zero = include 1-word descriptor before each stream edge (bit15=near, bits8-14=slot, bits0-7=edge_idx)
+#define VGK_CURRENT_SLOT       (VGK_X_FREE_BASE + 0xC4) // Current slot index: written by mode-4 load handler; overwritten per-object in scene loop
 
 // Optional hidden-line buffers in free X-RAM.
-#define VGK_FACE_VISIBILITY   (VGK_X_FREE_BASE + 0x1A2) // 16 words: per-face visibility (0/1)
-#define VGK_FACE_NORMALS      (VGK_X_FREE_BASE + 0x1B2) // 48 words: up to 16 Q14 normals (3 words each)
+#define VGK_FACE_VISIBILITY   (VGK_X_FREE_BASE + 0x146) // 32 words: per-face visibility (0/1/2); ends +0x165
+#define VGK_FACE_NORMALS      (VGK_X_FREE_BASE + 0x166) // 96 words: up to 32 Q14 normals (3 words each); ends +0x1C5
+#define VGK_FACE_REP_VERT     (VGK_X_FREE_BASE + 0x1C6) // 32 words: per-face representative vertex index; ends +0x1E5
 
 // Screen Coordinates Output (X-RAM)
-#define VGK_SCREEN_COORDS_X  (VGK_X_FREE_BASE + 0xC0) // X-RAM: 64 words for [sx,sy] × up to 32 verts
+#define VGK_SCREEN_COORDS_X  (VGK_X_FREE_BASE + 0xC6) // X-RAM: 128 words for [sx,sy] × up to 60 verts
 #define VGK_SCREEN_COORDS    VGK_SCREEN_COORDS_X      // Alias
 
-// Clipping Output (X-RAM)
-#define VGK_N_CLIP_VERTS_X  (VGK_X_FREE_BASE + 0x170) // X-RAM: count (1 word)
-#define VGK_CLIP_VERTS_X    (VGK_X_FREE_BASE + 0x171) // X-RAM: clip verts buffer (48 words)
-#define VGK_N_CLIP_VERTS    VGK_N_CLIP_VERTS_X
-#define VGK_CLIP_VERTS      VGK_CLIP_VERTS_X
-#define VGK_CLIP_SCREEN_X   (VGK_X_FREE_BASE + 0x100) // X-RAM: 32 words for [sx,sy] × up to 16 verts
-#define VGK_CLIP_SCREEN     VGK_CLIP_SCREEN_X
-#define VGK_N_OUTPUT_EDGES_X       (VGK_X_FREE_BASE + 0x120) // X-RAM: count (1 word)
-#define VGK_OUTPUT_EDGE_FLAGS_X    (VGK_X_FREE_BASE + 0x121) // X-RAM: flags packed 2/word (18 words for 36 edges)
-#define VGK_OUTPUT_EDGE_PACKED_X   (VGK_X_FREE_BASE + 0x133) // X-RAM: packed_v0v1 per edge (36 words)
-#define VGK_N_OUTPUT_EDGES         VGK_N_OUTPUT_EDGES_X
-#define VGK_OUTPUT_EDGE_FLAGS      VGK_OUTPUT_EDGE_FLAGS_X
-#define VGK_OUTPUT_EDGE_PACKED     VGK_OUTPUT_EDGE_PACKED_X
-// Flag word[i] = (flags[2i+1] << 8) | flags[2i]  (low byte = even edge, high byte = odd edge)
-// Save slot layout — host writes geometry directly to VGK_SAVE_AREA_X + slot * VGK_SAVE_SLOT_SIZE.
-// The DSP _load_object copies from the chosen slot to the active working area on each trigger.
-// Slot field offsets match the order used by the DSP _load_object function in geometry5.s.
-#define VGK_SAVE_AREA_X        (VGK_X_FREE_BASE + 0x200)  // Base of 8-slot save area (X-RAM)
-#define VGK_SAVE_SLOT_SIZE     0x100                           // Words per slot
-#define VGK_SAVE_SLOT_COUNT    8                               // Slots 0..7
+// Save slot layout: two non-contiguous banks (geometry-only mode required).
+//   Bank A (X_FREE_BASE+0x200 = 0x3800): slots 0..3 (4×512=2048 words, 0x3800..0x3FFF)
+//   Bank B (0x0D00):                     slots 4..5 (2×512=1024 words, 0x0D00..0x0EFF)
+#define VGK_SAVE_AREA_X           (VGK_X_FREE_BASE + 0x200) // X-RAM Bank A: slots 0..3
+#define VGK_SAVE_AREA_B           0x0D00                         // X-RAM Bank B: slots 4..5 (decoder region)
+#define VGK_SAVE_SLOT_SIZE        0x200                          // words per object save slot (512)
+#define VGK_SAVE_SLOT_COUNT_A     4                              // slots in Bank A (0..3)
+#define VGK_SAVE_SLOT_COUNT_B     2                              // slots in Bank B (4..5)
+#define VGK_SAVE_SLOT_COUNT       6                              // total save slots (0..5)
+#define VGK_SAVE_AREA_X_END       (VGK_SAVE_AREA_X + (VGK_SAVE_SLOT_SIZE * VGK_SAVE_SLOT_COUNT_A) - 1)  // 0x3FFF
+#define VGK_SAVE_AREA_B_END       (VGK_SAVE_AREA_B + (VGK_SAVE_SLOT_SIZE * VGK_SAVE_SLOT_COUNT_B) - 1)  // 0x0EFF
 // Offsets within a slot (add to slot base = VGK_SAVE_AREA_X + slot * VGK_SAVE_SLOT_SIZE)
 #define VGK_SLOT_N_VERTICES    0x00  // 1 word: vertex count
-#define VGK_SLOT_INPUT_VERT    0x01  // 96 words: [vx,vy,vz] x up to 32 verts
-#define VGK_SLOT_N_EDGES       0x61  // 1 word: edge count (offset 97 = 1 + 96)
-#define VGK_SLOT_EDGE_LIST     0x62  // 36 words: packed [v1|v0] per edge
+#define VGK_SLOT_INPUT_VERT    0x01  // 180 words: [vx,vy,vz] x up to 60 verts
+#define VGK_SLOT_N_EDGES       0xB5  // 1 word: edge count (offset 181 = 1 + 180)
+#define VGK_SLOT_EDGE_LIST     0xB6  // 90 words: packed [v1|v0] per edge
 // Slot field: N_FACES 
-#define VGK_SLOT_N_FACES       0x86  // 1 word: face count
-#define VGK_SLOT_EDGE_FACE_MAP 0x87  // 36 words: packed [face1|face0] per edge
-#define VGK_SLOT_FACE_NORMALS  0xAB  // 48 words: [nx,ny,nz] x up to 16 faces (offset 171)
+#define VGK_SLOT_N_FACES       0x110  // 1 word: face count
+#define VGK_SLOT_EDGE_FACE_MAP 0x111  // 90 words: packed [face1|face0] per edge
+#define VGK_SLOT_FACE_NORMALS  0x16B  // 96 words: [nx,ny,nz] x up to 32 faces (offset 171)
 
 // Edge flags for output
 #define VGK_EDGE_VISIBLE    0x0001  // Edge is visible
@@ -194,22 +188,25 @@
 #define VGK_SCENE_FLAG_NO_OCCLUSION  0x0001                        // Skip AABB sort/cull pass; per-object hidden line still runs
 // Metadata ends at 0x048D
 
-// Scene Output Accumulation (Decoder X-RAM: 0x0500)
-#define VGK_SCENE_SCREEN_COORDS 0x0500  // 512 words: 256 verts x 2 [sx,sy]
-#define VGK_SCENE_OUTPUT_EDGES  0x0700  // 576 words: 288 edges x 2 [packed,flags]
-#define VGK_SCENE_CLIP_SCREEN   0x0940  // 128 words: 64 clip verts x 2 [sx,sy]
-
-// Scene capacity limits
-#define VGK_SCENE_MAX_VERTS     256     // Max combined screen vertices
-#define VGK_SCENE_MAX_EDGES     288     // Max combined output edges
-#define VGK_SCENE_MAX_CLIPS     64      // Max combined clip vertices
+// SCI readback: read WRAMADDR=0x04FF to get N_STREAM_EDGES, then auto-
+// increment through 0x0500 for N*(3 or 4) words. Copy directly to the
+// hardware line-draw engine with no further processing required.
+#define VGK_N_STREAM_EDGES     0x04FF   // 1 word: total visible edges in stream (X-RAM, before base)
+#define VGK_EDGE_STREAM_BASE   0x0500   // stream start (X-RAM, same address as old SCENE_OUTPUT_BASE)
+#define VGK_EDGE_STREAM_MAX    512      // max edges; 512*4=2048 words => stream ends at 0x0CFF
+// Descriptor field constants (used when VGK_ENABLE_DESCRIPTOR != 0)
+#define VGK_EDESC_NEAR_BIT     0x8000   // bit 15: edge midpoint is on the near (camera) side
+#define VGK_EDESC_CULL_BIT     0x4000   // bit 14: transient occlusion-pass cull flag; cleared during stream compaction
+                                        //   Safe: slot field uses bits 8-14, but max slot=5 so bits 11-14 are always 0
+#define VGK_EDESC_SLOT_SHIFT   8        // bits 8-14: save-slot index the object was loaded from
+#define VGK_EDESC_SLOT_MASK    0x7F     // 7-bit slot field (slots 0..127)
+#define VGK_EDESC_IDX_MASK     0xFF     // bits 0-7: index of this edge within the object's edge list
 
 extern const int16_t sin_table[256];
 // When true, objects us the near color for all edges. Improved rendering speed, but no depth coloring.
 extern bool vgk_no_near_far_coloring;
 // When true, hidden-line removal is active; fast path is suppressed. 'Fast path' is optimized
-// for on-screen wireframe objects.
-extern bool vgk_hidden_line_active;
+
 
 // geometry kernel functions
 
@@ -265,20 +262,18 @@ void vgk_cam_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll,
 void vgk_hidden_line_enable(void);
 void vgk_hidden_line_disable(void);
 
+void vgk_near_far_coloring_enable(bool enabled);
+
 void vgk_trigger(void);
 uint8_t vgk_wait_complete(uint16_t timeout_ms);
 
-// Retrieves screen data from the kernel and draws the edges to the screen bitmap layer.
-// Performs near far coloring if enabled, and can optionally draw depth-sorted hidden lines if the hidden line feature is active.
-// the model parameter must be the same as the model currently loaded by vgk_model_load().
-uint8_t vgk_scrn_edges_with_depth_get(Model3D *model, uint8_t layer);
 
 // 
 // Retrieves edges, no near/far coloring. Save drawing instructions to a global list
 // for processing by draw_lines_from_list.
 // Not currently optimized. So vgk_scrn_edges_with_depth_get is recommended.
 //
-uint8_t vgk_scrn_edges_get(Model3D * model, uint8_t color);
+uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t color);
 
 /* Register a callback that vgk_yield() calls on every
 * polling iteration instead of the default nop-delay.  Pass NULL to restore
@@ -286,6 +281,8 @@ uint8_t vgk_scrn_edges_get(Model3D * model, uint8_t color);
 * so that the audio loop is not starved when multiple objects are rendered. */
 void vgk_yield_cb_set(void (*cb)(void));
 void vgk_yield(void);
+
+void vgk_line_draw(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color, uint8_t layer);
 
 // -----------------------------------------------------------------------------
 // Plugin state capture for host-side debugging
@@ -379,8 +376,7 @@ typedef struct {
 
 // Enable or disable scene mode.  When enabled the next trigger_geometry_kernel()
 // call processes all objects in the scene descriptor instead of a single object.
-void vgk_scene_enable(void);
-void vgk_scene_disable(void);
+void vgk_scene_enable(bool enabled);
 void vgk_scene_no_occlusion_enable(void);
 void vgk_scene_no_occlusion_disable(void);
 

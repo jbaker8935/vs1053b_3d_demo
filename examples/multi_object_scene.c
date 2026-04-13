@@ -38,10 +38,15 @@ void app_frame(uint16_t cam_x, int16_t cam_z, uint8_t cam_yaw) {
     uint8_t status = vgk_wait_complete(10000);
     if (status == 1) {
         // retrieve and draw edges for the whole scene (all objects at once)
-        vgk_scene_scrn_edges_get(8, scene_objs, 0x0B, 0x0D, draw_layer);
+        // textPrint("Rendering scene with edge retrieval... \n");
+        vgk_scrn_edges_get(draw_layer, 0x0B);
     } else if (status == 0){
         textPrint("Error: Geometry kernel timeout.\n");
-    } 
+    } else {
+        textPrint("Error: Geometry kernel error during processing.: ");
+        textPrintUInt(status);
+        textPrint("\n");
+    }
     video_wait_vblank();
     bitmapSetVisible(draw_layer, true);
     bitmapSetVisible(visible_layer, false);
@@ -84,7 +89,7 @@ int main(int argc, char *argv[]) {
     textGotoXY(0, 0);
     textPrint("App Init Complete. \n");
     // use scene API for multi-object demo
-    vgk_scene_enable();
+    vgk_scene_enable(true);
     vgk_scene_set_descriptor(8, scene_objs);
     for (uint8_t loop = 0; loop < 4; loop++) {
         textGotoXY(0, 0);

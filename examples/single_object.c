@@ -16,7 +16,7 @@ void app_init(void) {
     vgk_model_slot_init(&g_model_cube, 0);
     vgk_cam_params_set(0, 0, 0, 0, 200, 2400);
     vgk_hidden_line_enable();
-    vgk_no_near_far_coloring = false;
+    vgk_near_far_coloring_enable(true);
 }
 
 void app_frame(uint8_t scale, uint8_t yaw, uint8_t pitch) {
@@ -27,7 +27,7 @@ void app_frame(uint8_t scale, uint8_t yaw, uint8_t pitch) {
     vgk_trigger();
     uint8_t status = vgk_wait_complete(10000);
     if (status == 1) {
-        vgk_scrn_edges_with_depth_get((Model3D *)&g_model_cube, draw_layer);
+        vgk_scrn_edges_get(draw_layer, 0x0B);
     } else if (status == 0){
         textPrint("Error: Geometry kernel timeout.\n");
     } 
