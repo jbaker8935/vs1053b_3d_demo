@@ -23,6 +23,7 @@ case 'f': case 'F':
 state->hold.rotateDown = pressed;
 if (pressed) state->edge.rotateDown = true;
 break;
+case ' ': if (pressed) state->edge.firePrimary = true; break;
 case 'x': case 'X': if (pressed) state->edge.exit = true; break;
 case '-': case '_': if (pressed) state->edge.swapStereo = true; break;
 case 'c': case 'C':

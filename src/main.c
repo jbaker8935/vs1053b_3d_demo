@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
         if (input->edge.exit) {
             break;
         }    
-        
+
         if (input->edge.resetCam) {
             reset_camera();
         }

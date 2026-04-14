@@ -1,4 +1,5 @@
 #include "f256lib.h"
+#include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -31,6 +32,7 @@ static uint8_t  g_event_idx;
 static uint16_t g_event_frame;
 static uint16_t g_idle_frame;
 static uint8_t  g_anim_tick;
+static bool     g_idle_timeout_pending;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -59,9 +61,29 @@ static void start_event(void) {
     g_event_frame = 0;
     g_anim_tick   = 0;
     g_idle_frame  = 0;
+    g_idle_timeout_pending = false;
     print_centered(3u, e->description);
     if (e->type == DEMO_EVENT_ONESHOT && e->callback) {
         e->callback();
+    }
+}
+
+static void start_demo(uint8_t idx);
+
+static void advance_event(void) {
+    const Demo *d = g_demos[g_demo_idx];
+    ++g_event_idx;
+    if (g_event_idx >= d->event_count) {
+        uint8_t next = (uint8_t)(g_demo_idx + 1u);
+        if (next >= g_demo_count) {
+            next = 0;
+        }
+        if (d->on_exit) {
+            d->on_exit();
+        }
+        start_demo(next);
+    } else {
+        start_event();
     }
 }
 
@@ -89,23 +111,6 @@ static void start_demo(uint8_t idx) {
     start_event();
 }
 
-static void advance_event(void) {
-    const Demo *d = g_demos[g_demo_idx];
-    ++g_event_idx;
-    if (g_event_idx >= d->event_count) {
-        uint8_t next = (uint8_t)(g_demo_idx + 1u);
-        if (next >= g_demo_count) {
-            next = 0;
-        }
-        if (d->on_exit) {
-            d->on_exit();
-        }
-        start_demo(next);
-    } else {
-        start_event();
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -129,7 +134,11 @@ bool demo_engine_update(InputState *input) {
                        input->hold.rotateUp    || input->hold.rotateDown;
     if (camera_held) {
         game_state_update_3d(input);
+    }
+
+    if (camera_held || input->edge.firePrimary) {
         g_idle_frame = 0;
+        g_idle_timeout_pending = false;
     } else {
         if (g_idle_frame < 0xFFFFu) {
             ++g_idle_frame;
@@ -154,8 +163,13 @@ bool demo_engine_update(InputState *input) {
     uint16_t duration_frames = (uint16_t)e->duration_secs * (uint16_t)T0_TICK_FREQ;
     bool advance = (duration_frames > 0u && g_event_frame >= duration_frames);
     // Idle timeout only applies to open-ended events (duration_secs == 0)
-    if (!advance && e->duration_secs == 0u && g_idle_frame >= DEMO_IDLE_TIMEOUT_FRAMES) {
-        advance = true;
+    if (!advance && !d->disable_idle_timeout &&
+        e->duration_secs == 0u && g_idle_frame >= DEMO_IDLE_TIMEOUT_FRAMES) {
+        if (!g_idle_timeout_pending) {
+            g_idle_timeout_pending = true;
+        } else {
+            advance = true;
+        }
     }
 
     if (advance) {

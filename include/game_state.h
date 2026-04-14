@@ -26,6 +26,9 @@ Wireframe3D wireframe;
 
 GameContext *game_state_data(void);
 void game_state_init(GameMode mode);
+void game_state_camera_basis_get(int16_t *fwd_x, int16_t *fwd_y,
+								 int16_t *fwd_z, int16_t *right_x,
+								 int16_t *right_z);
 void game_state_update_3d(InputState *input);
 void game_state_increment_frame(void);
 void reset_camera(void);

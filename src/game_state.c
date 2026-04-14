@@ -1,3 +1,4 @@
+#include "f256lib.h"
 #include "../include/game_state.h"
 #include "../include/3d_object.h"
 #include "../include/input.h"
@@ -15,13 +16,13 @@ static GameContext g_ctx __attribute__((section(".bss")));
 GameMode gameMode = STATE_DEMO;
 
 void reset_camera(void) {
-vec3_t cam_pos = {0, 200, 2400};
-camera_init(&g_ctx.wireframe.camera, cam_pos);
-Camera *camera = &g_ctx.wireframe.camera;
-vgk_cam_params_set(
-camera->pitch, camera->yaw, camera->roll,
-camera->position.x, camera->position.y, camera->position.z);
-camera->moved = true;
+    vec3_t cam_pos = {0, 200, 2400};
+    camera_init(&g_ctx.wireframe.camera, cam_pos);
+    Camera *camera = &g_ctx.wireframe.camera;
+    vgk_cam_params_set(
+        camera->pitch, camera->yaw, camera->roll,
+        camera->position.x, camera->position.y, camera->position.z);
+    camera->moved = true;
 }
 
 GameContext *game_state_data(void) {
@@ -44,10 +45,8 @@ if (value > max) return max;
 return value;
 }
 
-void game_state_update_3d(InputState *input) {
-// increment camera position based on orientation
-int16_t speed = 35;
-
+void game_state_camera_basis_get(int16_t *fwd_x, int16_t *fwd_y,
+int16_t *fwd_z, int16_t *right_x, int16_t *right_z) {
 uint8_t yaw = g_ctx.wireframe.camera.yaw;
 uint8_t pitch = g_ctx.wireframe.camera.pitch;
 int16_t cy = sin_table[(uint8_t)(yaw + 64) & 0xFF];
@@ -55,16 +54,35 @@ int16_t sy = sin_table[yaw];
 int16_t sp = sin_table[pitch];
 int16_t cp = sin_table[(uint8_t)(pitch + 64) & 0xFF];
 
+if (fwd_x != NULL) {
 int32_t tmp_fx = mathSignedMultiply(sy, cp);
-int16_t fwd_x = (int16_t)(-(tmp_fx >> 14));
-int16_t fwd_y = sp;
+*fwd_x = (int16_t)(-(tmp_fx >> 14));
+}
+if (fwd_y != NULL) {
+*fwd_y = sp;
+}
+if (fwd_z != NULL) {
 int32_t tmp_fz = mathSignedMultiply(cy, cp);
-int16_t fwd_z = (int16_t)(-(tmp_fz >> 14));
+*fwd_z = (int16_t)(-(tmp_fz >> 14));
+}
+if (right_x != NULL) {
+*right_x = cy;
+}
+if (right_z != NULL) {
+*right_z = (int16_t)-sy;
+}
+}
 
-int16_t right_x = cy;
-int16_t right_z = -sy;
+void game_state_update_3d(InputState *input) {
+// increment camera position based on orientation
+int16_t speed = 35;
+int16_t fwd_x;
+int16_t fwd_y;
+int16_t fwd_z;
+int16_t right_x;
+int16_t right_z;
 
-
+game_state_camera_basis_get(&fwd_x, &fwd_y, &fwd_z, &right_x, &right_z);
 
 if (input->hold.w) {
 int16_t dx = (int16_t)(mathSignedMultiply(fwd_x, speed) >> 14);

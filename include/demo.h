@@ -36,6 +36,7 @@ typedef struct {
     uint8_t                   near_color;          // used only by scene API path
     uint8_t                   far_color;           // used only by scene API path
     bool                      use_scene_api;       // true = scene_get_screen_edges; false = single-object loop
+    bool                      disable_idle_timeout; // true = never auto-advance on idle (interactive demos)
     demo_fn_t                 on_enter;            // setup called before first event; NULL ok
     demo_fn_t                 on_exit;             // teardown after last event; NULL ok
 } Demo;
