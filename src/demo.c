@@ -178,10 +178,18 @@ void demo_engine_render(uint8_t draw_layer) {
             const SceneObjectParams *inst = &g_demo_instances[i];
             vgk_obj_params_set(inst->pitch, inst->yaw, inst->roll, inst->scale,
                                 inst->pos_x, inst->pos_y, inst->pos_z);
-            vgk_model_load(inst->slot);
+            if (!vgk_model_load(inst->slot)) {
+                textPrint("Error: Geometry model load failed for slot ");
+                textPrintUInt(inst->slot);
+                textPrint(".\n");
+                return;
+            }
             vgk_reset();
             vgk_trigger();
-            vgk_wait_complete(10000);
+            if (vgk_wait_complete(10000) != 1) {
+                textPrint("Error: Geometry kernel timeout or error.\n");
+                return;
+            }
             vgk_scrn_edges_get(draw_layer, 0x0B);
             vgk_yield(); /* service audio after per-object SCI readback */
         }

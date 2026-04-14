@@ -175,7 +175,7 @@ const Model3D g_model_anaconda = {
 };
 
 
-/* truncated octahedron - max edges supported by current kernel
+/* truncated octahedron 
  * 24 vertices, 36 edges, 14 faces (6 squares + 8 hexagons).
  */
 
@@ -272,11 +272,6 @@ const Model3D g_model_truncated_octahedron = {
 
 #define TI_SCALE 5
 
-/* vertex coordinates: (0, ±1, ±3φ) and cyclic perms × TI_SCALE,
- * (±1, ±(2+φ), ±2φ) and cyclic perms × TI_SCALE,
- * (±2, ±(1+2φ), ±φ) and cyclic perms × TI_SCALE,
- * with φ = (1+√5)/2 ≈ 1.618, values rounded to nearest integer.
- */
 static const int16_t ti_vx[60] = {
        0 * TI_SCALE,   20 * TI_SCALE,   97 * TI_SCALE,    0 * TI_SCALE,   20 * TI_SCALE,  -97 * TI_SCALE,    0 * TI_SCALE,  -20 * TI_SCALE,
       97 * TI_SCALE,    0 * TI_SCALE,  -20 * TI_SCALE,  -97 * TI_SCALE,   20 * TI_SCALE,   72 * TI_SCALE,   65 * TI_SCALE,   20 * TI_SCALE,
@@ -333,8 +328,8 @@ static const uint8_t ti_edge_b[90] = {
 };
 
 /* 32 face normals in Q14 object space.
- * Faces 0-11:  pentagon normals — (±φ/√(1+φ²), 0, ±1/√(1+φ²)) and axis permutations.
- * Faces 12-31: hexagon normals  — ±9459 (≈1/√3) triples, and ±15305/±5846 pairs.
+ * Faces 0-11:  pentagon normals 
+ * Faces 12-31: hexagon normals  
  */
 static const int16_t ti_face_nx[32] = {
     -13937,  8614,     0,     0,     0, -8614, 13937, 13937,

@@ -98,14 +98,8 @@ void vgk_projection_disable(void) {
 }
 
 void vgk_model_vertices_init(const Model3D *model, uint8_t slot) {
-    uint16_t base = 0;
-    if (slot < 4) {
-        base = VGK_SAVE_AREA_X + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
-    } else if (slot < 6) {
-        base = VGK_SAVE_AREA_B + (uint16_t)(slot - 4) * VGK_SAVE_SLOT_SIZE;
-    } else {
-        return;  // Invalid slot; do nothing
-    }
+    if (slot >= VGK_SAVE_SLOT_COUNT) return;
+    uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
     vs1053_mem_write(base + VGK_SLOT_N_VERTICES, model->vertex_count);
     vs1053_sci_write(SCI_WRAMADDR, base + VGK_SLOT_INPUT_VERT);
     for (uint8_t i = 0; i < model->vertex_count; ++i) {
@@ -140,14 +134,8 @@ void vgk_hidden_line_enable(void) {
 }
 
 void vgk_model_hidden_line_init(const Model3D *model, uint8_t slot) {
-    uint16_t base = 0;
-    if (slot < 4) {
-        base = VGK_SAVE_AREA_X + (uint16_t) slot * VGK_SAVE_SLOT_SIZE;
-    } else if (slot < 6) {
-        base = VGK_SAVE_AREA_B + (uint16_t)(slot - 4) * VGK_SAVE_SLOT_SIZE;
-    } else {
-        return;  // Invalid slot; do nothing
-    }
+    if (slot >= VGK_SAVE_SLOT_COUNT) return;
+    uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
     
     uint8_t face_count = model->face_count;
 
@@ -200,14 +188,8 @@ void vgk_model_slot_init(const Model3D *model, uint8_t slot) {
 }
 
 void vgk_model_edges_init(const Model3D *model, uint8_t slot) {
-    uint16_t base = 0;
-    if (slot < 4) {
-        base = VGK_SAVE_AREA_X + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
-    } else if (slot < 6) {
-        base = VGK_SAVE_AREA_B + (uint16_t)(slot - 4) * VGK_SAVE_SLOT_SIZE;
-    } else {
-        return;  // Invalid slot; do nothing
-    }
+    if (slot >= VGK_SAVE_SLOT_COUNT) return;
+    uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
     vs1053_mem_write(base + VGK_SLOT_N_EDGES, model->edge_count);
     vs1053_sci_write(SCI_WRAMADDR, base + VGK_SLOT_EDGE_LIST);
     for (uint8_t i = 0; i < model->edge_count; ++i) {
@@ -239,6 +221,7 @@ void vgk_trigger(void) {
 // load Object from internal slot
 __attribute__((noinline))
 bool vgk_model_load(uint16_t slot) {
+    vgk_reset();
     vs1053_sci_write(SCI_AICTRL2, slot);            // Set trigger to start processing
     if (vgk_wait_complete(1000) == 1) {  // wait for completion (or error)
         return true;

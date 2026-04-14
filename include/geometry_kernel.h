@@ -118,18 +118,18 @@
 #define VGK_SCREEN_COORDS_X  (VGK_X_FREE_BASE + 0xC6) // X-RAM: 128 words for [sx,sy] × up to 60 verts
 #define VGK_SCREEN_COORDS    VGK_SCREEN_COORDS_X      // Alias
 
-// Save slot layout: two non-contiguous banks (geometry-only mode required).
-//   Bank A (X_FREE_BASE+0x200 = 0x3800): slots 0..3 (4×512=2048 words, 0x3800..0x3FFF)
-//   Bank B (0x0D00):                     slots 4..5 (2×512=1024 words, 0x0D00..0x0EFF)
-#define VGK_SAVE_AREA_X           (VGK_X_FREE_BASE + 0x200) // X-RAM Bank A: slots 0..3
-#define VGK_SAVE_AREA_B           0x0D00                         // X-RAM Bank B: slots 4..5 (decoder region)
+// Save slot layout: single contiguous block in AAC decoder X-RAM (freed with DAC disabled).
+//   0x2000..0x2BFF: slots 0..5 (6 × 512 = 3072 words)
+// Region 0x2000..0x2BFF is within AAC decoder X-RAM (0x1F00..0x3565),
+// fully accessible via SCI, and clear of stack/parametric/sysvar areas.
+#define VGK_SAVE_AREA             0x2000                         // X-RAM: contiguous save slots 0..5
 #define VGK_SAVE_SLOT_SIZE        0x200                          // words per object save slot (512)
-#define VGK_SAVE_SLOT_COUNT_A     4                              // slots in Bank A (0..3)
-#define VGK_SAVE_SLOT_COUNT_B     2                              // slots in Bank B (4..5)
 #define VGK_SAVE_SLOT_COUNT       6                              // total save slots (0..5)
-#define VGK_SAVE_AREA_X_END       (VGK_SAVE_AREA_X + (VGK_SAVE_SLOT_SIZE * VGK_SAVE_SLOT_COUNT_A) - 1)  // 0x3FFF
-#define VGK_SAVE_AREA_B_END       (VGK_SAVE_AREA_B + (VGK_SAVE_SLOT_SIZE * VGK_SAVE_SLOT_COUNT_B) - 1)  // 0x0EFF
-// Offsets within a slot (add to slot base = VGK_SAVE_AREA_X + slot * VGK_SAVE_SLOT_SIZE)
+#define VGK_SAVE_AREA_END         (VGK_SAVE_AREA + (VGK_SAVE_SLOT_SIZE * VGK_SAVE_SLOT_COUNT) - 1)  // 0x2BFF
+
+#define VGK_INPUT_VERT_END        (VGK_INPUT_VERT + (VGK_MAX_VERTICES * 3) - 1)
+
+// Offsets within a slot (add to slot base = VGK_SAVE_AREA + slot * VGK_SAVE_SLOT_SIZE)
 #define VGK_SLOT_N_VERTICES    0x00  // 1 word: vertex count
 #define VGK_SLOT_INPUT_VERT    0x01  // 180 words: [vx,vy,vz] x up to 60 verts
 #define VGK_SLOT_N_EDGES       0xB5  // 1 word: edge count (offset 181 = 1 + 180)
