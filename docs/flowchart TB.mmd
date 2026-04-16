@@ -1,0 +1,58 @@
+%%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%
+flowchart LR
+    classDef init   fill:#0d2b45,stroke:#4a90d9,color:#cde8ff,font-weight:bold
+    classDef loop   fill:#0d3320,stroke:#56c776,color:#d4f5e2,font-weight:bold
+    classDef sci    fill:#3d2000,stroke:#f0a830,color:#ffebc0
+    classDef dsp    fill:#2b1040,stroke:#a855f7,color:#ede1ff
+    classDef render fill:#002d35,stroke:#22d3ee,color:#cffafe
+    classDef decide fill:#2d2200,stroke:#eab308,color:#fefce8,font-weight:bold
+
+    %% ── LEFT: CPU Host with render detail inline ─────────────────────────────
+    subgraph CPU_Host ["CPU Host  (Wildbits K2 or Jr2)"]
+        direction TB
+        INIT(["main()  one-time init"]):::init
+        INIT --> LOOP
+        LOOP{{"Frame loop"}}:::loop
+        LOOP --> INP["input_handler_poll()"]:::loop
+        INP  --> UPD["demo_engine_update()"]:::loop
+        UPD  --> R1["demo_engine_render()"]:::render
+        R1   --> DEC{"use_scene_api?"}:::decide
+        DEC -- "yes" --> SCN["vgk_scene_scrn_edges_get()<br/>set descriptor · trigger · wait · readback"]:::render
+        DEC -- "no"  --> POBJ["Per-object loop  i = 0..N-1"]:::render
+        POBJ --> OBP["vgk_obj_params_set()<br/>vgk_model_load(slot)"]:::render
+        OBP  --> TRG["vgk_reset() · vgk_trigger()"]:::render
+        TRG  --> WCO["vgk_wait_complete()"]:::render
+        WCO  --> EDG["vgk_scrn_edges_get()<br/>push x0, x1, y to DL FIFO"]:::render
+        EDG  --> YLD(["vgk_yield()  audio service"]):::render
+        SCN  --> TIM
+        YLD  --> TIM
+        TIM["Wait frame tick<br/>process_vgm_tick()"]:::loop
+        TIM  --> LOOP
+    end
+
+    %% ── CENTRE: SCI Bus ──────────────────────────────────────────────────────
+    subgraph SCI_Bus ["SCI Bus  (mem-mapped 0xD700)"]
+        direction TB
+        SWR["WRAMADDR / WRAM<br/>bulk param write"]:::sci
+        STR["AICTRL0 = 0xCAFE  trigger DSP<br/>AICTRL2 = slot  load object"]:::sci
+        SRD["WRAM reads  edge stream<br/>mem_read(VGK_STATUS)  poll"]:::sci
+    end
+
+    %% ── RIGHT: Geometry Kernel ───────────────────────────────────────────────
+    subgraph VGK ["Geometry Kernel Plugin  (VS1053b DSP)"]
+        direction TB
+        GE[["entry  0x0050 / host: 0x8050"]]:::dsp
+        GI["X-RAM input region<br/>VGK_OBJ_*  VGK_CAM_*  VGK_PROJ_*"]:::dsp
+        GS["Scene descriptor<br/>VGK_SCENE_ENABLE / N_OBJECTS<br/>obj records  0x0400..0x0431"]:::dsp
+        GSL[("Save slots x6<br/>0x2000..0x2BFF<br/>verts, edges, normals")]:::dsp
+        GO[("Edge output stream<br/>N_STREAM_EDGES  0x04FF<br/>desc, x0, x1, y  × N  from 0x0500")]:::dsp
+        GE --> GI
+        GE --> GS
+        GS --> GSL
+        GI --> GO
+        GS --> GO
+    end
+
+    %% ── CROSS-BOUNDARY FLOWS ─────────────────────────────────────────────────
+    CPU_Host <-->|"writes: transforms · descriptor  /  reads: status · edge stream"| SCI_Bus
+    SCI_Bus  <-->|"programs: X/Y-RAM · AICTRL0/2 trigger  /  DSP fills: STATUS · edge stream"| VGK

@@ -1,0 +1,39 @@
+%%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%
+flowchart LR
+    classDef init   fill:#0d2b45,stroke:#4a90d9,color:#cde8ff,font-weight:bold
+    classDef loop   fill:#0d3320,stroke:#56c776,color:#d4f5e2,font-weight:bold
+    classDef sci    fill:#3d2000,stroke:#f0a830,color:#ffebc0,font-weight:bold
+    classDef dsp    fill:#2b1040,stroke:#a855f7,color:#ede1ff,font-weight:bold
+    classDef render fill:#002d35,stroke:#22d3ee,color:#cffafe,font-weight:bold
+
+    subgraph CPU ["CPU Host  (Wildbits K2 or Jr2)"]
+        direction TB
+        C1(["Initialise<br/>Load plugin · Set projection"]):::init
+        C1 --> C2
+        C2{{"Frame Loop"}}:::loop
+        C2 --> C3["Poll Input<br/>Update Demo State"]:::loop
+        C3 --> C4["Submit Scene<br/>to Geometry Kernel"]:::render
+        C4 --> C5["Rasterise Edges<br/>to Display"]:::render
+        C5 --> C6["Frame Sync<br/>Service Audio"]:::loop
+        C6 --> C2
+    end
+
+    subgraph SCI ["SCI Bus  (VS1053b mem-mapped I/O)"]
+        direction TB
+        S1["Write 3D transform<br/>parameters"]:::sci
+        S2["Trigger DSP<br/>computation"]:::sci
+        S3["Read back<br/>projected edges"]:::sci
+        S1 --> S2 --> S3
+    end
+
+    subgraph VGK ["Geometry Kernel  (VS1053b DSP Plugin)"]
+        direction TB
+        V1[["Load model<br/>from save slot"]]:::dsp
+        V2["Apply transforms<br/>Project to screen"]:::dsp
+        V3[("Stream projected<br/>edges to host")]:::dsp
+        V1 --> V2
+        V2 --> V3
+    end
+
+    CPU  <-->|"params · trigger · edge readback"| SCI
+    SCI  <-->|"X-RAM writes · AICTRL trigger · edge stream"| VGK
