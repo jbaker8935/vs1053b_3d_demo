@@ -110,7 +110,7 @@ int main(int argc, char *argv[]) {
                  ? argv[1] : NULL;
 
     f256Init();
-    vs1053_clock_boost();
+    vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);
     vs1053_plugin_load();
     vgk_plugin_init();
     vs1053_dac_mute();
