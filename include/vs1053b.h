@@ -37,6 +37,34 @@
 #define SCI_AICTRL2     0x0E
 #define SCI_AICTRL3     0x0F
 
+#define INT_ENABLE      0xC01A
+#define INT_GLOB_DIS    0xC01B
+#define INT_GLOB_ENA    0xC01C
+#define INT_COUNTER     0xC01D
+#define INT_EN_DAC      (1u << 0)
+#define INT_EN_SCI      (1u << 1)
+#define INT_EN_SDI      (1u << 2)
+#define INT_EN_ADC      (1u << 3)
+#define INT_EN_TX       (1u << 4)
+#define INT_EN_RX       (1u << 5)
+#define INT_EN_TIM0     (1u << 6)
+#define INT_EN_TIM1     (1u << 7)
+#define INT_EN_SRC      (1u << 8)
+#define INT_EN_SDM      (1u << 9)
+
+#define SC_MULT_x10    0x0000
+#define SC_MULT_x20    0x2000
+#define SC_MULT_x25    0x4000
+#define SC_MULT_x30    0x6000
+#define SC_MULT_x35    0x8000
+#define SC_MULT_x40    0xA000
+#define SC_MULT_x45    0xC000
+#define SC_MULT_x50    0xE000
+#define SC_ADD_x00     0x0000
+#define SC_ADD_x10     0x0800
+#define SC_ADD_x15     0x1000
+#define SC_ADD_x20     0x1800
+
 /* Memory space offsets for WRAMADDR */
 #define IRAM_OFFSET     0x8000
 #define XRAM_OFFSET     0x0000
@@ -56,6 +84,6 @@ void vs1053_dac_interrupt_enable(void);
 /* Plugin helpers */
 void vs1053_plugin_init(uint16_t size_words);
 void vs1053_plugin_load(void);
-void vs1053_clock_boost(void);
+void vs1053_clock_boost(uint16_t mult, uint16_t add);
 
 #endif /* VS1053B_H */

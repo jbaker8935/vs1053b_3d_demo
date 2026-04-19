@@ -7,7 +7,7 @@
 
 static uint8_t visible_layer = 1;
 void app_init(void) {
-    vs1053_clock_boost();
+    vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);
     vs1053_plugin_load();     
     vgk_plugin_init();
     vs1053_dac_mute();

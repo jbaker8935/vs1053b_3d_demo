@@ -42,15 +42,15 @@ void vs1053_dac_mute(void) {
 }
 __attribute__((noinline))
 void vs1053_dac_interrupt_disable(void) {
-    uint16_t reg = vs1053_mem_read(0xC01A);      /* INT_ENABLE read */
-    reg &= ~(1u << 0);                           /* clear INT_EN_DAC */
-    vs1053_mem_write(0xC01A, reg);
+    uint16_t reg = vs1053_mem_read(INT_ENABLE);      /* INT_ENABLE read */
+    reg &= ~(INT_EN_DAC);                           /* clear INT_EN_DAC */
+    vs1053_mem_write(INT_ENABLE, reg);
 }
 __attribute__((noinline))
 void vs1053_dac_interrupt_enable(void) {
-    uint16_t reg = vs1053_mem_read(0xC01A);
-    reg |= (1u << 0);                            /* set INT_EN_DAC */
-    vs1053_mem_write(0xC01A, reg);
+    uint16_t reg = vs1053_mem_read(INT_ENABLE);
+    reg |= INT_EN_DAC;                            /* set INT_EN_DAC */
+    vs1053_mem_write(INT_ENABLE, reg);
 }
 
 /* -----------------------------------------------------------------------
@@ -72,24 +72,14 @@ __attribute__((noinline))
       val = FAR_PEEKW(0x10000lu + (uint32_t)i);
       i += 2u;
       while (n--) {
-        POKEW(VS_SCI_ADDR, addr);
-        POKEW(VS_SCI_DATA, val);
-        POKE(VS_SCI_CTRL, CTRL_Start);
-        POKE(VS_SCI_CTRL, 0);
-        while ((PEEK(VS_SCI_CTRL) & CTRL_Busy) == CTRL_Busy)
-          ;
+        vs1053_sci_write(addr,val);
       }
     } else {
       /* Copy run, copy n samples */
       while (n--) {
         val = FAR_PEEKW(0x10000lu + (uint32_t)i);
         i += 2u;
-        POKEW(VS_SCI_ADDR, addr);
-        POKEW(VS_SCI_DATA, val);
-        POKE(VS_SCI_CTRL, CTRL_Start);
-        POKE(VS_SCI_CTRL, 0);
-        while ((PEEK(VS_SCI_CTRL) & CTRL_Busy) == CTRL_Busy)
-          ;
+        vs1053_sci_write(addr,val);
       }
     }
   }
@@ -101,12 +91,8 @@ void vs1053_plugin_load() {
   vs1053_plugin_init(plugin_size_words);
 }
 
-void vs1053_clock_boost() {
+void vs1053_clock_boost(uint16_t mult, uint16_t add) {
   /* Recommended SC_MULT=3.5x/SC_ADD=1.0x (SCI_CLOCKF=0x8800) */
-  POKEW(VS_SCI_ADDR, VS_SCI_ADDR_CLOCKF);
-  POKEW(VS_SCI_DATA, 0xC000);
-  POKE(VS_SCI_CTRL, CTRL_Start);
-  POKE(VS_SCI_CTRL, 0);
-  while (PEEK(VS_SCI_CTRL) & CTRL_Busy)
-    ;
+  /* SC_MULT=4.5x/SC_ADD=0x0 (SCI_CLOCKF=0xC000) */
+  vs1053_sci_write(VS_SCI_ADDR_CLOCKF, mult | add);
 }
