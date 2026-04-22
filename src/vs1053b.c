@@ -4,8 +4,8 @@
 
 EMBED(plugin_data,"assets/plugin.bin",0x10000lu);
 
-uint16_t vs1053_sci_read(uint8_t addr) {
-    POKE(VS_SCI_ADDR, addr);
+uint16_t vs1053_sci_read(uint8_t sci_reg) {
+    POKE(VS_SCI_ADDR, sci_reg);
     POKE(VS_SCI_CTRL, CTRL_Start | CTRL_RWn);  /* Activate xCS and start read */
     POKE(VS_SCI_CTRL, 0);                      /* Deactivate xCS */
 
@@ -16,8 +16,8 @@ uint16_t vs1053_sci_read(uint8_t addr) {
     return ret;
 }
 
-void vs1053_sci_write(uint8_t addr, uint16_t data) {
-    POKE(VS_SCI_ADDR, addr);
+void vs1053_sci_write(uint8_t sci_reg, uint16_t data) {
+    POKE(VS_SCI_ADDR, sci_reg);
     POKEW(VS_SCI_DATA, data);
     POKE(VS_SCI_CTRL, CTRL_Start);  /* start write */
     POKE(VS_SCI_CTRL, 0);           /* deactivate */
@@ -59,11 +59,11 @@ void vs1053_dac_interrupt_enable(void) {
 __attribute__((noinline))
  void vs1053_plugin_init(uint16_t size) {
   uint16_t n;
-  uint16_t addr, val;
+  uint16_t sci_reg, val;
   uint32_t i = 0;
   /* i is the byte offset into the plugin data; size is in words */
   while (i < (uint32_t)size * 2u) {
-    addr = FAR_PEEKW(0x10000lu + (uint32_t)i);
+    sci_reg = FAR_PEEKW(0x10000lu + (uint32_t)i);
     n = FAR_PEEKW(0x10000lu + (uint32_t)(i + 2u));
     i += 4u;
 
@@ -72,14 +72,14 @@ __attribute__((noinline))
       val = FAR_PEEKW(0x10000lu + (uint32_t)i);
       i += 2u;
       while (n--) {
-        vs1053_sci_write(addr,val);
+        vs1053_sci_write(sci_reg,val);
       }
     } else {
       /* Copy run, copy n samples */
       while (n--) {
         val = FAR_PEEKW(0x10000lu + (uint32_t)i);
         i += 2u;
-        vs1053_sci_write(addr,val);
+        vs1053_sci_write(sci_reg,val);
       }
     }
   }
