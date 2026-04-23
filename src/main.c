@@ -113,11 +113,17 @@ int main(int argc, char *argv[]) {
     vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);
     vs1053_plugin_load();
     vgk_plugin_init();
-    vs1053_dac_mute();
-    vs1053_dac_interrupt_disable(); // Decoder RAM is being used.
     game_state_init(STATE_DEMO);
     input_handler_init();
     video_init();
+
+    {
+        uint16_t vgk_caps = 0;
+        if (!vgk_plugin_probe(&vgk_caps)) {
+            textPrint("Geom plugin probe failed.\n");
+            return 1;
+        }
+    }
 
     // 4:3 aspect 320x240 with vertical fov 90 degrees
     vgk_projection_params_init(240, 160, 120, -128);
