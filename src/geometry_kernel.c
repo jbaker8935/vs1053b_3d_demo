@@ -53,22 +53,22 @@ uint16_t vgk_plugin_signature_read(void) {
     return vs1053_mem_read(VGK_PLUGIN_SIGNATURE);
 }
 
-uint16_t vgk_plugin_caps_read(void) {
+uint16_t vgk_plugin_version_read(void) {
     return vs1053_mem_read(VGK_PLUGIN_CAPS);
 }
 
-bool vgk_plugin_probe(uint16_t *caps_out) {
+bool vgk_plugin_probe(uint16_t *version_out) {
     uint16_t signature = vgk_plugin_signature_read();
 
     if (signature != VGK_PLUGIN_SIGNATURE_VALUE) {
-        if (caps_out != NULL) {
-            *caps_out = 0;
+        if (version_out != NULL) {
+            *version_out = 0;
         }
         return false;
     }
 
-    if (caps_out != NULL) {
-        *caps_out = vgk_plugin_caps_read();
+    if (version_out != NULL) {
+        *version_out = vgk_plugin_version_read();
     }
     return true;
 }

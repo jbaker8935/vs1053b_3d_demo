@@ -88,6 +88,7 @@ static void camera_orbit(void) {
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
+    uint16_t version=0;
 
     bool occlusion = true;
     video_init();
@@ -96,7 +97,11 @@ int main(int argc, char *argv[]) {
         textPrint("Geom plugin probe failed.\n");
         return 1;
     }
-    textGotoXY(0, 0);
+    textGotoXY(0, 1);
+    vgk_plugin_probe(&version);
+    textPrint("Geometry Plugin Version: ");
+    textPrintUInt(version);
+    textPrint("\n");
     textPrint("App Init Complete. \n");
     // use scene API for multi-object demo
     vgk_scene_enable(true);

@@ -56,9 +56,10 @@
 
 // Stable SCI-readable plugin probe words and direct-slot control words.
 #define VGK_PLUGIN_SIGNATURE_VALUE  0x4750  // 'GP'
-#define VGK_PLUGIN_CAPS_SLOT8       0x0001
-#define VGK_PLUGIN_CAPS_SCENE32     0x0002
-#define VGK_PLUGIN_CAPS_DIRECT_SLOT 0x0004
+// Plugin version word stored at VGK_PLUGIN_CAPS:
+//   High byte = major version (API-breaking changes increment this)
+//   Low byte  = minor version (bug fixes / non-breaking additions)
+#define VGK_PLUGIN_VERSION_VALUE    0x0100  // v1.0
 #define VGK_PLUGIN_SIGNATURE        0x1818
 #define VGK_PLUGIN_CAPS             0x1819
 #define VGK_ACTIVE_SLOT_BASE        0x181A
@@ -228,8 +229,8 @@ extern bool vgk_no_near_far_coloring;
 void vgk_plugin_init(void);   // quiesces DAC/decoder use of reclaimed RAM, clears status, and enables plugin triggers.
 void vgk_reset(void);         // clears plugin status.
 uint16_t vgk_plugin_signature_read(void);
-uint16_t vgk_plugin_caps_read(void);
-bool vgk_plugin_probe(uint16_t *caps_out);
+uint16_t vgk_plugin_version_read(void);
+bool vgk_plugin_probe(uint16_t *version_out);
 bool vgk_plugin_loaded(void);
 
 // initialize project parameters for rendering.  Only needs to be done once.

@@ -333,9 +333,91 @@ $(BUILD_DIR)/$(MULTI_NAME).pgz: $(BUILD_DIR)/$(MULTI_NAME)
 	@mkdir -p bin
 	@cp $(BUILD_DIR)/$(MULTI_NAME).pgz bin/
 
+# Max object scene demo (mirrors multi_object_scene pattern)
+MAX_NAME := max_object_scene
+MAX_SRC := examples/max_object_scene.c
+MAX_OBJ := $(BUILD_DIR)/$(MAX_NAME).o
+MAX_ASM := $(BUILD_DIR)/$(MAX_NAME).s
+MAX_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+MAX_OBJS := $(MAX_OBJ) $(MAX_DEPS)
+MAX_OVERLAY_DIR := $(BUILD_DIR)/maxo
+MAX_SRC_STAGING := $(BUILD_DIR)/maxo_src
+
+.PHONY: $(MAX_NAME) max_object_overlay
+$(MAX_NAME): $(BUILD_DIR)/$(MAX_NAME).pgz
+	@echo "$(MAX_NAME) build complete: $<"
+
+max_object_overlay: dirs
+	@mkdir -p $(MAX_SRC_STAGING)/assets $(MAX_OVERLAY_DIR)/assets
+	@cp $(ROOT)/src/vs1053b.c $(MAX_SRC_STAGING)/
+	@cp -a $(ROOT)/src/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/src/assets/* $(MAX_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(MAX_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@if command -v $(OVERLAY) >/dev/null 2>&1; then \
+		$(OVERLAY) 5 $(MAX_OVERLAY_DIR) $(MAX_SRC_STAGING) || { echo "max_object overlay failed" >&2; exit 1; }; \
+	else \
+		echo "overlay not found; skipping max_object overlay step"; \
+	fi
+
+$(BUILD_DIR)/$(MAX_NAME).o: $(MAX_SRC) | dirs
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(MAX_NAME).s: $(MAX_SRC) | dirs
+	$(CC) -S $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(MAX_NAME): max_object_overlay $(MAX_OBJS) | dirs
+	(cd $(MAX_OVERLAY_DIR) && \
+	$(CC) \
+		-D__llvm_mos__ \
+		-T ../../$(LDSCRIPT) \
+		-Wl,-Map=../$(MAX_NAME).map \
+		-o ../$(MAX_NAME) \
+		-I../.. \
+		-Os -Wall -lm \
+		$(addprefix ../,$(notdir $(MAX_OBJS))) \
+		$(LDFLAGS))
+
+$(BUILD_DIR)/$(MAX_NAME).pgz: $(BUILD_DIR)/$(MAX_NAME)
+	@if [ -f $(BUILD_DIR)/$(MAX_NAME).elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(MAX_NAME).elf; \
+	elif [ -f $(BUILD_DIR)/$(MAX_NAME).elf.elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(MAX_NAME).elf.elf; \
+	else \
+		ELF_FILE=; \
+	fi; \
+	if [ -n "$$ELF_FILE" ]; then \
+		$(NM) "$$ELF_FILE" > $(BUILD_DIR)/$(MAX_NAME).sym || true; \
+		$(OBJDUMP) --syms -d --print-imm-hex "$$ELF_FILE" > $(BUILD_DIR)/$(MAX_NAME).lst || true; \
+	fi
+
+	@if [ -f $(BUILD_DIR)/$(MAX_NAME) ]; then \
+		mv $(BUILD_DIR)/$(MAX_NAME) $(BUILD_DIR)/$(MAX_NAME).pgz; \
+	fi
+
+	@if [ -f $(BUILD_DIR)/$(MAX_NAME).pgz ]; then \
+		SCRIPT=""; \
+		if [ -f "$(PGZ_THUNK)" ]; then \
+			SCRIPT="$(PGZ_THUNK)"; \
+		elif command -v $(PGZ_THUNK) >/dev/null 2>&1; then \
+			SCRIPT="$$(command -v $(PGZ_THUNK))"; \
+		fi; \
+		if [ -n "$$SCRIPT" ]; then \
+			$(PYTHON) "$$SCRIPT" $(BUILD_DIR)/$(MAX_NAME).pgz || echo "pgz-thunk did not process $(BUILD_DIR)/$(MAX_NAME).pgz"; \
+		fi; \
+	fi
+
+	# Ensure a PGZ artifact was produced by overlay/pgz-thunk.
+	@if [ ! -f $(BUILD_DIR)/$(MAX_NAME).pgz ]; then \
+		echo "ERROR: pgz-thunk did not produce $(BUILD_DIR)/$(MAX_NAME).pgz" >&2; \
+		exit 1; \
+	fi
+	@mkdir -p bin
+	@cp $(BUILD_DIR)/$(MAX_NAME).pgz bin/
+
 .PHONY: examples
-examples: single_object multi_object_scene
-	@echo "Built examples: bin/single_object.pgz bin/multi_object_scene.pgz"
+examples: single_object multi_object_scene max_object_scene
+	@echo "Built examples: bin/single_object.pgz bin/multi_object_scene.pgz bin/max_object_scene.pgz"
 
 
 info:
