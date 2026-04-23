@@ -7,11 +7,10 @@
 
 static uint8_t visible_layer = 1;
 void app_init(void) {
+    textGotoXY(0, 0);
     vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);
-    vs1053_plugin_load();     
+    vs1053_plugin_load();   
     vgk_plugin_init();
-    vs1053_dac_mute();
-    vs1053_dac_interrupt_disable(); // Decoder RAM is being used.  
     vgk_projection_params_init(240, 160, 120, -128);
     vgk_model_slot_init(&g_model_cube, 0);
     vgk_cam_params_set(0, 0, 0, 0, 200, 2400);
@@ -46,6 +45,10 @@ int main(int argc, char *argv[]) {
 
     video_init();
     app_init();
+    if (!vgk_plugin_loaded()) {
+        textPrint("Geom plugin probe failed.\n");getchar();
+        return 1;
+    }
     textGotoXY(0, 0);
     textPrint("App Init Complete. \n");
     // make cube active object

@@ -5,7 +5,7 @@
 #include "../include/3d_object.h"
 #include "../include/video.h"
 
-static SceneObjectParams scene_objs[8] = {
+static SceneObjectParams scene_objs[16] = {
     { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-400, .pos_y=0, .pos_z=400 },
     { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-400, .pos_y= 0, .pos_z=-400 },
     { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 400, .pos_y=0, .pos_z=-400 },
@@ -13,7 +13,15 @@ static SceneObjectParams scene_objs[8] = {
     { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-800, .pos_y=-0, .pos_z=800 },
     { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-800, .pos_y= 0, .pos_z=-800 },
     { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 800, .pos_y=0, .pos_z=-800 },
-    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 800, .pos_y= 0, .pos_z=800 }
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 800, .pos_y= 0, .pos_z=800 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-1200, .pos_y=0, .pos_z=1200 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-1200, .pos_y= 0, .pos_z=-1200 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 1200, .pos_y=0, .pos_z=-1200 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 1200, .pos_y= 0, .pos_z=1200 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-1600, .pos_y=-0, .pos_z=1600 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x=-1600, .pos_y= 0, .pos_z=-1600 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 1600, .pos_y=0, .pos_z=-1600 },
+    { .slot=0, .yaw=0, .pitch=0, .roll=0, .scale=128, .pos_x= 1600, .pos_y= 0, .pos_z=1600 }    
 };
 
 static uint8_t visible_layer = 1;
@@ -21,8 +29,6 @@ void app_init(void) {
     vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);
     vs1053_plugin_load();     
     vgk_plugin_init();
-    vs1053_dac_mute();
-    vs1053_dac_interrupt_disable(); // Decoder RAM is being used.  
     vgk_projection_params_init(240, 160, 120, -128);
     vgk_model_slot_init(&g_model_cube, 0);
     vgk_cam_params_set(0, 0, 0, 0, 200, 2400);
@@ -60,7 +66,7 @@ static uint8_t camera_yaw;
 
 static void camera_orbit(void) {
 
-    const int16_t radius = 2400;
+    const int16_t radius = 4000;
     const int16_t center_x = 0;
     const int16_t center_z = 0;
 
@@ -86,11 +92,15 @@ int main(int argc, char *argv[]) {
     bool occlusion = true;
     video_init();
     app_init();
+    if (!vgk_plugin_loaded()) {
+        textPrint("Geom plugin probe failed.\n");
+        return 1;
+    }
     textGotoXY(0, 0);
     textPrint("App Init Complete. \n");
     // use scene API for multi-object demo
     vgk_scene_enable(true);
-    vgk_scene_set_descriptor(8, scene_objs);
+    vgk_scene_set_descriptor(16, scene_objs);
     for (uint8_t loop = 0; loop < 4; loop++) {
         textGotoXY(0, 0);
         textPrint("Camera orbiting: Occlusion ");

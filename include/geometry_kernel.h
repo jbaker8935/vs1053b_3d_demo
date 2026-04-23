@@ -54,6 +54,19 @@
 #define VGK_OBJ_TRIG      VGK_OBJ_SX
 #define VGK_CAM_TRIG      VGK_CAM_SX
 
+// Stable SCI-readable plugin probe words and direct-slot control words.
+#define VGK_PLUGIN_SIGNATURE_VALUE  0x4750  // 'GP'
+#define VGK_PLUGIN_CAPS_SLOT8       0x0001
+#define VGK_PLUGIN_CAPS_SCENE32     0x0002
+#define VGK_PLUGIN_CAPS_DIRECT_SLOT 0x0004
+#define VGK_PLUGIN_SIGNATURE        0x1818
+#define VGK_PLUGIN_CAPS             0x1819
+#define VGK_ACTIVE_SLOT_BASE        0x181A
+#define VGK_ACTIVE_INPUT_VERT_BASE  0x181B
+#define VGK_ACTIVE_EDGE_LIST_BASE   0x181C
+#define VGK_ACTIVE_EDGE_FACE_MAP_BASE 0x181D
+#define VGK_ACTIVE_FACE_NORMALS_BASE  0x181E
+
 // Input/Output Buffers
 #define VGK_INPUT_VERT    0x0F00  // Input vertices (X-RAM)
 #define VGK_OUTPUT_VERT   0x500C  // Output vertices (Y-RAM)
@@ -119,25 +132,24 @@
 #define VGK_SCREEN_COORDS    VGK_SCREEN_COORDS_X      // Alias
 
 // Save slot layout: single contiguous block in AAC decoder X-RAM (freed with DAC disabled).
-//   0x2000..0x2BFF: slots 0..5 (6 × 512 = 3072 words)
-// Region 0x2000..0x2BFF is within AAC decoder X-RAM (0x1F00..0x3565),
+//   0x2000..0x2FFF: slots 0..7 (8 × 512 = 4096 words)
+// Region 0x2000..0x2FFF is within AAC decoder X-RAM (0x1F00..0x3565),
 // fully accessible via SCI, and clear of stack/parametric/sysvar areas.
-#define VGK_SAVE_AREA             0x2000                         // X-RAM: contiguous save slots 0..5
+#define VGK_SAVE_AREA             0x2000                         // X-RAM: contiguous save slots 0..7
 #define VGK_SAVE_SLOT_SIZE        0x200                          // words per object save slot (512)
-#define VGK_SAVE_SLOT_COUNT       6                              // total save slots (0..5)
-#define VGK_SAVE_AREA_END         (VGK_SAVE_AREA + (VGK_SAVE_SLOT_SIZE * VGK_SAVE_SLOT_COUNT) - 1)  // 0x2BFF
+#define VGK_SAVE_SLOT_COUNT       8                              // total save slots (0..7)
+#define VGK_SAVE_AREA_END         (VGK_SAVE_AREA + (VGK_SAVE_SLOT_SIZE * VGK_SAVE_SLOT_COUNT) - 1)  // 0x2FFF
 
 #define VGK_INPUT_VERT_END        (VGK_INPUT_VERT + (VGK_MAX_VERTICES * 3) - 1)
 
 // Offsets within a slot (add to slot base = VGK_SAVE_AREA + slot * VGK_SAVE_SLOT_SIZE)
-#define VGK_SLOT_N_VERTICES    0x00  // 1 word: vertex count
-#define VGK_SLOT_INPUT_VERT    0x01  // 180 words: [vx,vy,vz] x up to 60 verts
-#define VGK_SLOT_N_EDGES       0xB5  // 1 word: edge count (offset 181 = 1 + 180)
-#define VGK_SLOT_EDGE_LIST     0xB6  // 90 words: packed [v1|v0] per edge
-// Slot field: N_FACES 
-#define VGK_SLOT_N_FACES       0x110  // 1 word: face count
-#define VGK_SLOT_EDGE_FACE_MAP 0x111  // 90 words: packed [face1|face0] per edge
-#define VGK_SLOT_FACE_NORMALS  0x16B  // 96 words: [nx,ny,nz] x up to 32 faces (offset 171)
+#define VGK_SLOT_N_VERTICES    0x00
+#define VGK_SLOT_INPUT_VERT    0x01
+#define VGK_SLOT_N_EDGES       (VGK_SLOT_INPUT_VERT + (VGK_MAX_VERTICES * 3))
+#define VGK_SLOT_EDGE_LIST     (VGK_SLOT_N_EDGES + 1)
+#define VGK_SLOT_N_FACES       (VGK_SLOT_EDGE_LIST + VGK_MAX_INPUT_EDGES)
+#define VGK_SLOT_EDGE_FACE_MAP (VGK_SLOT_N_FACES + 1)
+#define VGK_SLOT_FACE_NORMALS  (VGK_SLOT_EDGE_FACE_MAP + VGK_MAX_INPUT_EDGES)
 
 // Edge flags for output
 #define VGK_EDGE_VISIBLE    0x0001  // Edge is visible
@@ -147,19 +159,20 @@
 #define VGK_EDGE_CULLED     0x0000  // Edge is culled
 
 // ==============================================================================
-// SCENE MEMORY MAP (Decoder X-RAM: 0x0400..0x0A3F)
+// SCENE MEMORY MAP (Decoder X-RAM: 0x0400..0x0E49)
 // ==============================================================================
 // The scene feature uses decoder X-RAM regions that are normally occupied by
-// audio decoders.  Since this is a graphics-only application the memory is
-// available for scene descriptor and combined output accumulation.
+// audio decoders. Since this is a graphics-only application, the memory is
+// available for the expanded scene descriptor, metadata, relocated edge stream,
+// and scene scratch region.
 
 // Scene Descriptor (X-RAM 0x0400)
 #define VGK_SCENE_BASE          0x0400
 #define VGK_SCENE_ENABLE        (VGK_SCENE_BASE + 0x00)   // Non-zero = scene mode
-#define VGK_SCENE_N_OBJECTS     (VGK_SCENE_BASE + 0x01)   // Number of objects (1..8)
-#define VGK_SCENE_MAX_OBJECTS   8                               // Maximum objects per scene
+#define VGK_SCENE_N_OBJECTS     (VGK_SCENE_BASE + 0x01)   // Number of objects (1..32)
+#define VGK_SCENE_MAX_OBJECTS   32                          // Maximum objects per scene
 #define VGK_SCENE_OBJ_PARAMS    (VGK_SCENE_BASE + 0x02)   // Per-object records start
-#define VGK_SCENE_OBJ_STRIDE    6                               // Words per object record
+#define VGK_SCENE_OBJ_STRIDE    6                           // Words per object record
 
 // Per-object record layout (6 words each, base + obj_idx * stride):
 //   +0: slot_idx      Save slot index (0..7)
@@ -168,39 +181,41 @@
 //   +3: pos_x         World position X
 //   +4: pos_y         World position Y
 //   +5: pos_z         World position Z
-// Total scene descriptor: 2 + 8*6 = 50 words (0x0400..0x0431)
+// Total scene descriptor: 2 + 32*6 = 194 words (0x0400..0x04C1)
 
-// Scene Per-Object Metadata (X-RAM 0x0432)
-#define VGK_SCENE_META_BASE     (VGK_SCENE_BASE + 0x32)
-#define VGK_SCENE_VERT_OFFSET   (VGK_SCENE_META_BASE + 0x00)  // 8 words: cumulative vert offset
-#define VGK_SCENE_EDGE_OFFSET   (VGK_SCENE_META_BASE + 0x08)  // 8 words: cumulative edge offset
-#define VGK_SCENE_DEPTH         (VGK_SCENE_META_BASE + 0x10)  // 8 words: centroid depth (view Z)
-#define VGK_SCENE_AABB          (VGK_SCENE_META_BASE + 0x18)  // 32 words: 8 x [min_x,max_x,min_y,max_y]
-#define VGK_SCENE_AABB_STRIDE   4                                   // Words per AABB record
-#define VGK_SCENE_VERT_COUNT    (VGK_SCENE_META_BASE + 0x38)  // 8 words: per-object vert count
-#define VGK_SCENE_EDGE_COUNT    (VGK_SCENE_META_BASE + 0x40)  // 8 words: per-object output edge count
-#define VGK_SCENE_TOTAL_VERTS   (VGK_SCENE_META_BASE + 0x48)  // 1 word: total combined verts
-#define VGK_SCENE_TOTAL_EDGES   (VGK_SCENE_META_BASE + 0x49)  // 1 word: total combined edges
-#define VGK_SCENE_CLIP_OFFSET   (VGK_SCENE_META_BASE + 0x4A)  // 8 words: cumulative clip vert offset
-#define VGK_SCENE_TOTAL_CLIPS   (VGK_SCENE_META_BASE + 0x52)  // 1 word: total combined clip verts
-#define VGK_SCENE_SORT_ORDER    (VGK_SCENE_META_BASE + 0x53)  // 8 words: depth-sorted object indices
-#define VGK_SCENE_FLAGS         (VGK_SCENE_META_BASE + 0x5B)  // 0x048D: Scene mode flags
-#define VGK_SCENE_FLAG_NO_OCCLUSION  0x0001                        // Skip AABB sort/cull pass; per-object hidden line still runs
-// Metadata ends at 0x048D
+// Scene Per-Object Metadata (X-RAM 0x04C2 for 32-object layout)
+#define VGK_SCENE_META_BASE     (VGK_SCENE_OBJ_PARAMS + (VGK_SCENE_MAX_OBJECTS * VGK_SCENE_OBJ_STRIDE))
+#define VGK_SCENE_VERT_OFFSET   (VGK_SCENE_META_BASE + 0x00)  // 32 words: cumulative vert offset
+#define VGK_SCENE_EDGE_OFFSET   (VGK_SCENE_VERT_OFFSET + VGK_SCENE_MAX_OBJECTS)  // 32 words: cumulative edge offset
+#define VGK_SCENE_DEPTH         (VGK_SCENE_EDGE_OFFSET + VGK_SCENE_MAX_OBJECTS)  // 32 words: nearest-face depth (max view Z, least negative = closest to camera)
+#define VGK_SCENE_AABB          (VGK_SCENE_DEPTH + VGK_SCENE_MAX_OBJECTS)  // 128 words: 32 x [min_x,max_x,min_y,max_y]
+#define VGK_SCENE_AABB_STRIDE   4                           // Words per AABB record
+#define VGK_SCENE_VERT_COUNT    (VGK_SCENE_AABB + (VGK_SCENE_MAX_OBJECTS * VGK_SCENE_AABB_STRIDE))  // 32 words: per-object vert count
+#define VGK_SCENE_EDGE_COUNT    (VGK_SCENE_VERT_COUNT + VGK_SCENE_MAX_OBJECTS)  // 32 words: per-object output edge count
+#define VGK_SCENE_TOTAL_VERTS   (VGK_SCENE_EDGE_COUNT + VGK_SCENE_MAX_OBJECTS)  // 1 word: total combined verts
+#define VGK_SCENE_TOTAL_EDGES   (VGK_SCENE_TOTAL_VERTS + 1)  // 1 word: total combined edges
+#define VGK_SCENE_CLIP_OFFSET   (VGK_SCENE_TOTAL_EDGES + 1)  // 32 words: cumulative clip vert offset
+#define VGK_SCENE_TOTAL_CLIPS   (VGK_SCENE_CLIP_OFFSET + VGK_SCENE_MAX_OBJECTS)  // 1 word: total combined clip verts
+#define VGK_SCENE_SORT_ORDER    (VGK_SCENE_TOTAL_CLIPS + 1)  // 32 words: depth-sorted object indices
+#define VGK_SCENE_FLAGS         (VGK_SCENE_SORT_ORDER + VGK_SCENE_MAX_OBJECTS)  // Scene mode flags
+#define VGK_SCENE_FLAG_NO_OCCLUSION  0x0001                 // Skip AABB sort/cull pass; per-object hidden line still runs
+// Metadata ends at 0x0625
 
-// SCI readback: read WRAMADDR=0x04FF to get N_STREAM_EDGES, then auto-
-// increment through 0x0500 for N*(3 or 4) words. Copy directly to the
+// SCI readback: read WRAMADDR=0x063F to get N_STREAM_EDGES, then auto-
+// increment through 0x0640 for N*(3 or 4) words. Copy directly to the
 // hardware line-draw engine with no further processing required.
-#define VGK_N_STREAM_EDGES     0x04FF   // 1 word: total visible edges in stream (X-RAM, before base)
-#define VGK_EDGE_STREAM_BASE   0x0500   // stream start (X-RAM, same address as old SCENE_OUTPUT_BASE)
-#define VGK_EDGE_STREAM_MAX    512      // max edges; 512*4=2048 words => stream ends at 0x0CFF
+#define VGK_N_STREAM_EDGES     0x063F   // 1 word: total visible edges in stream (X-RAM, before base)
+#define VGK_EDGE_STREAM_BASE   0x0640   // stream start (X-RAM, relocated after 32-object scene metadata)
+#define VGK_EDGE_STREAM_MAX    512      // max edges; 512*4=2048 words => stream ends at 0x0E3F
 // Descriptor field constants (used when VGK_ENABLE_DESCRIPTOR != 0)
 #define VGK_EDESC_NEAR_BIT     0x8000   // bit 15: edge midpoint is on the near (camera) side
 #define VGK_EDESC_CULL_BIT     0x4000   // bit 14: transient occlusion-pass cull flag; cleared during stream compaction
-                                        //   Safe: slot field uses bits 8-14, but max slot=5 so bits 11-14 are always 0
+                                        //   Safe: slot field uses bits 8-14, but max slot=7 so bits 11-14 are always 0
 #define VGK_EDESC_SLOT_SHIFT   8        // bits 8-14: save-slot index the object was loaded from
 #define VGK_EDESC_SLOT_MASK    0x7F     // 7-bit slot field (slots 0..127)
 #define VGK_EDESC_IDX_MASK     0xFF     // bits 0-7: index of this edge within the object's edge list
+
+#define VGK_SCENE_SCRATCH      0x0E40   // 10 words scratch for scene loop
 
 extern const int16_t sin_table[256];
 // When true, objects us the near color for all edges. Improved rendering speed, but no depth coloring.
@@ -210,8 +225,12 @@ extern bool vgk_no_near_far_coloring;
 
 // geometry kernel functions
 
-void vgk_plugin_init(void);   // clears plugin status and enables the plugin for triggers.
+void vgk_plugin_init(void);   // quiesces DAC/decoder use of reclaimed RAM, clears status, and enables plugin triggers.
 void vgk_reset(void);         // clears plugin status.
+uint16_t vgk_plugin_signature_read(void);
+uint16_t vgk_plugin_caps_read(void);
+bool vgk_plugin_probe(uint16_t *caps_out);
+bool vgk_plugin_loaded(void);
 
 // initialize project parameters for rendering.  Only needs to be done once.
 // Recommended values for 4:3 aspect 320x240 with vertical fov 90 degrees
@@ -240,9 +259,8 @@ void vgk_model_vertices_init(const Model3D* model, uint8_t slot);
 void vgk_model_edges_init(const Model3D* model, uint8_t slot);
 void vgk_model_hidden_line_init(const Model3D* model, uint8_t slot);
 
-// Loads a model as the current object for processing.
-// The model remains as the current object between kernel calls
-// so multiple instances can be processed without reloading the object.
+// Selects a saved slot as the current object for processing.
+// The plugin may use slot memory directly via active-base indirection.
 bool vgk_model_load(uint16_t slot);  
 
 // set the current object's transformation parameters.

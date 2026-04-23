@@ -41,8 +41,40 @@ void vgk_slot_model_set(const Model3D *model, uint8_t slot) {
 }
 
 void vgk_plugin_init(void) {
+    // Geometry mode reuses decoder RAM, so quiesce DAC-driven decoder work
+    // before arming the AIADDR callback entry.
+    vs1053_dac_mute();
+    vs1053_dac_interrupt_disable();
     vs1053_mem_write(VGK_STATUS, 0x0000);  // Clear status
     vs1053_sci_write(SCI_AIADDR, 0x0050);
+}
+
+uint16_t vgk_plugin_signature_read(void) {
+    return vs1053_mem_read(VGK_PLUGIN_SIGNATURE);
+}
+
+uint16_t vgk_plugin_caps_read(void) {
+    return vs1053_mem_read(VGK_PLUGIN_CAPS);
+}
+
+bool vgk_plugin_probe(uint16_t *caps_out) {
+    uint16_t signature = vgk_plugin_signature_read();
+
+    if (signature != VGK_PLUGIN_SIGNATURE_VALUE) {
+        if (caps_out != NULL) {
+            *caps_out = 0;
+        }
+        return false;
+    }
+
+    if (caps_out != NULL) {
+        *caps_out = vgk_plugin_caps_read();
+    }
+    return true;
+}
+
+bool vgk_plugin_loaded(void) {
+    return vgk_plugin_probe(NULL);
 }
 
 // Setup object transformation parameters
@@ -62,7 +94,7 @@ void vgk_obj_angle_scale_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t s
 }
 
 // Setup object position only parameters
-void setup_object_pos(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
+void vgk_obj_pos_set(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_OBJ_POS_X, pos_x);
     vs1053_sci_write(SCI_WRAM, pos_y);
     vs1053_sci_write(SCI_WRAM, pos_z);
@@ -179,8 +211,7 @@ void vgk_model_hidden_line_init(const Model3D *model, uint8_t slot) {
 
 void vgk_model_slot_init(const Model3D *model, uint8_t slot) {
     // Write geometry directly to the save slot
-    // The kernel will copy from this slot to the
-    // active working area when the object is first used in a scene.
+    // The plugin may consume the selected slot directly via active-base words.
     vgk_slot_model_set(model, slot);  
     vgk_model_vertices_init(model, slot);
     vgk_model_edges_init(model, slot);
@@ -345,16 +376,17 @@ uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
         POKE(DL_CONTROL, (layer << 2) | 0x01); // enable + no clock        
         // unused for now.
         if(has_descriptors) {
-            uint16_t desc = vs1053_sci_read(SCI_WRAM); //(bit15=near, bit14=scene temporary, bits8-13=slot, bits0-7=edge_idx)
-            uint8_t slot= (desc & 0x3F00) >> 8;
-            uint8_t edge_idx = desc & 0x00FF;
-            if(slot_model[slot]->edge_color_count > 0) {
-                uint16_t edge_color = slot_model[slot]->edge_color[edge_idx];             
-                POKE(DL_COLOR, desc & 0x8000 ? edge_color&0xFF : edge_color>>8); // near = low byte, far = high byte
-            } else {
-                if(vgk_near_far_coloring) {
-                    uint16_t object_color = slot_model[slot]->object_color;
-                    POKE(DL_COLOR, desc & 0x8000 ? object_color&0xFF : object_color>>8); // near = low byte, far = high byte
+            uint16_t desc = vs1053_sci_read(SCI_WRAM); //(bit15=near, bit14=scene temporary, bits8-14=slot, bits0-7=edge_idx)
+            uint8_t slot = (uint8_t)((desc >> VGK_EDESC_SLOT_SHIFT) & VGK_EDESC_SLOT_MASK);
+            uint8_t edge_idx = (uint8_t)(desc & VGK_EDESC_IDX_MASK);
+            if (slot < VGK_SAVE_SLOT_COUNT && slot_model[slot] != NULL) {
+                const Model3D *model = slot_model[slot];
+                if (model->edge_color_count > edge_idx) {
+                    uint16_t edge_color = model->edge_color[edge_idx];
+                    POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? edge_color & 0xFF : edge_color >> 8); // near = low byte, far = high byte
+                } else if (vgk_near_far_coloring) {
+                    uint16_t object_color = model->object_color;
+                    POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? object_color & 0xFF : object_color >> 8); // near = low byte, far = high byte
                 }
             }
         }
@@ -491,6 +523,8 @@ uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
                                 uint8_t near_color, uint8_t far_color,
                                 uint8_t draw_layer) {
 
+    (void)far_color;
+
     // incomplete implementation. one color
 
     uint16_t edges_written = 0;
@@ -506,10 +540,6 @@ uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
         textPrint("Error: Geometry kernel timeout or error.\n");
         return 0;  // timeout or error
     }
-
-    // Read combined scene results.
-    SceneResult res;
-    vgk_scene_get_result(&res);
 
     edges_written = vgk_scrn_edges_get(draw_layer, near_color);
 
