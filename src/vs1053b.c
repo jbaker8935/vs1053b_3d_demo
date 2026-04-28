@@ -2,8 +2,6 @@
 #include <stdint.h>
 #include "../include/vs1053b.h"
 
-EMBED(plugin_data,"assets/plugin.bin",0x10000lu);
-
 uint16_t vs1053_sci_read(uint8_t sci_reg) {
     POKE(VS_SCI_ADDR, sci_reg);
     POKE(VS_SCI_CTRL, CTRL_Start | CTRL_RWn);  /* Activate xCS and start read */
@@ -56,20 +54,22 @@ void vs1053_dac_interrupt_enable(void) {
 /* -----------------------------------------------------------------------
  * Plugin load/clock helpers
  * ----------------------------------------------------------------------- */
+
 __attribute__((noinline))
- void vs1053_plugin_init(uint16_t size) {
+void vs1053_plugin_load(uint32_t plugin_data_start, uint32_t plugin_data_end) {
+  uint32_t plugin_size_bytes = (uint32_t)(plugin_data_end - plugin_data_start);
   uint16_t n;
   uint16_t sci_reg, val;
   uint32_t i = 0;
   /* i is the byte offset into the plugin data; size is in words */
-  while (i < (uint32_t)size * 2u) {
-    sci_reg = FAR_PEEKW(0x10000lu + (uint32_t)i);
-    n = FAR_PEEKW(0x10000lu + (uint32_t)(i + 2u));
+  while (i < plugin_size_bytes) {
+    sci_reg = FAR_PEEKW(plugin_data_start + (uint32_t)i);
+    n = FAR_PEEKW(plugin_data_start + (uint32_t)(i + 2u));
     i += 4u;
 
     if (n & 0x8000U) { /* RLE run, replicate n samples */
       n &= 0x7FFF;
-      val = FAR_PEEKW(0x10000lu + (uint32_t)i);
+      val = FAR_PEEKW(plugin_data_start + (uint32_t)i);
       i += 2u;
       while (n--) {
         vs1053_sci_write(sci_reg,val);
@@ -77,18 +77,13 @@ __attribute__((noinline))
     } else {
       /* Copy run, copy n samples */
       while (n--) {
-        val = FAR_PEEKW(0x10000lu + (uint32_t)i);
+        val = FAR_PEEKW(plugin_data_start + (uint32_t)i);
         i += 2u;
         vs1053_sci_write(sci_reg,val);
       }
     }
   }
-}
-__attribute__((noinline))
-void vs1053_plugin_load() {
-  uint32_t plugin_size_bytes = (uint32_t)(plugin_data_end - plugin_data_start);
-  uint16_t plugin_size_words = (uint16_t)(plugin_size_bytes >> 1);
-  vs1053_plugin_init(plugin_size_words);
+
 }
 
 void vs1053_clock_boost(uint16_t mult, uint16_t add) {

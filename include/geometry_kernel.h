@@ -56,12 +56,12 @@
 
 // Stable SCI-readable plugin probe words and direct-slot control words.
 #define VGK_PLUGIN_SIGNATURE_VALUE  0x4750  // 'GP'
-// Plugin version word stored at VGK_PLUGIN_CAPS:
+// Plugin version word stored at VGK_PLUGIN_VERSION:
 //   High byte = major version (API-breaking changes increment this)
 //   Low byte  = minor version (bug fixes / non-breaking additions)
 #define VGK_PLUGIN_VERSION_VALUE    0x0100  // v1.0
 #define VGK_PLUGIN_SIGNATURE        0x1818
-#define VGK_PLUGIN_CAPS             0x1819
+#define VGK_PLUGIN_VERSION             0x1819
 #define VGK_ACTIVE_SLOT_BASE        0x181A
 #define VGK_ACTIVE_INPUT_VERT_BASE  0x181B
 #define VGK_ACTIVE_EDGE_LIST_BASE   0x181C
@@ -198,8 +198,9 @@
 #define VGK_SCENE_CLIP_OFFSET   (VGK_SCENE_TOTAL_EDGES + 1)  // 32 words: cumulative clip vert offset
 #define VGK_SCENE_TOTAL_CLIPS   (VGK_SCENE_CLIP_OFFSET + VGK_SCENE_MAX_OBJECTS)  // 1 word: total combined clip verts
 #define VGK_SCENE_SORT_ORDER    (VGK_SCENE_TOTAL_CLIPS + 1)  // 32 words: depth-sorted object indices
-#define VGK_SCENE_FLAGS         (VGK_SCENE_SORT_ORDER + VGK_SCENE_MAX_OBJECTS)  // Scene mode flags
-#define VGK_SCENE_FLAG_NO_OCCLUSION  0x0001                 // Skip AABB sort/cull pass; per-object hidden line still runs
+#define VGK_SCENE_FLAGS         (VGK_SCENE_SORT_ORDER + VGK_SCENE_MAX_OBJECTS)  // Scene mode flags (bit0=NO_OCCLUSION, bit1=NO_SORT)
+#define VGK_SCENE_FLAG_NO_OCCLUSION  0x0001                        // Skip AABB sort/cull pass; per-object hidden line still runs
+#define VGK_SCENE_FLAG_NO_SORT       0x0002                        // Skip sub-pass D (depth sort + near/far partition); SORT_ORDER unchanged
 // Metadata ends at 0x0625
 
 // SCI readback: read WRAMADDR=0x063F to get N_STREAM_EDGES, then auto-
@@ -226,25 +227,17 @@ extern bool vgk_no_near_far_coloring;
 
 // geometry kernel functions
 
-void vgk_plugin_init(void);   // quiesces DAC/decoder use of reclaimed RAM, clears status, and enables plugin triggers.
+void vgk_plugin_init(void);   // mutes DAC audio, disables DAC interrupts, loads plugin binary, and initializes plugin state.
 void vgk_reset(void);         // clears plugin status.
-uint16_t vgk_plugin_signature_read(void);
-uint16_t vgk_plugin_version_read(void);
-bool vgk_plugin_probe(uint16_t *version_out);
-bool vgk_plugin_loaded(void);
+uint16_t vgk_plugin_version(void);  // returns 0 if plugin not present, otherwise version word (high byte = major, low byte = minor)
 
-// initialize project parameters for rendering.  Only needs to be done once.
-// Recommended values for 4:3 aspect 320x240 with vertical fov 90 degrees
-// vgk_projection_params_init(120, 160, 120, -64);
+// Initialize project parameters for rendering.  Only needs to be done once.
+// Recommended best values for plugin: vgk_projection_params_init(240, 160, 120, -128);
+// Smaller focal and near_z values increase the perspective distortion effect, but risk clipping artifacts. *test*
+
 
 void vgk_projection_params_init(int16_t focal, int16_t half_w, int16_t half_h,
                          int16_t near_z);  
-                         
-// vgk_project_params_init enables projection and clipping by default
-// the following functions can be used to enable/disable projection if the application only
-// needs the transformed view coordinates without perspective division and clipping.
-void vgk_projection_enable(void);
-void vgk_projection_disable(void);
 
 
 /* model functions

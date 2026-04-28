@@ -82,8 +82,7 @@ void vs1053_dac_interrupt_disable(void);
 void vs1053_dac_interrupt_enable(void);
 
 /* Plugin helpers */
-void vs1053_plugin_init(uint16_t size_words);
-void vs1053_plugin_load(void);
+void vs1053_plugin_load(uint32_t plugin_data_start, uint32_t plugin_data_end);
 void vs1053_clock_boost(uint16_t mult, uint16_t add);
 
 #endif /* VS1053B_H */

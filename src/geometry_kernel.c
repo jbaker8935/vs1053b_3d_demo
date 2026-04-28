@@ -6,6 +6,14 @@
 #include "../include/3d_object.h"
 #include "../include/draw_line.h"
 
+/* Embed plugin at llvm-mos right below bitmap page 2 address */
+/* Once the plugin load is executed the memory is available for other use */
+/* Users may modify the address as needed by their application */
+/* The address *must* be a numeric value.  You cannot use a define or a variable */
+EMBED(plugin_data,"assets/plugin.bin",0x3F000lu);
+#define PLUGIN_SIZE_BYTES (17102lu)  // actual binary size (old 16434)
+
+
 const int16_t sin_table[256] = {
     0,      402,    804,    1205,   1606,   2006,   2404,   2801,   3196,   3590,   3981,   4370,   4756,   5139,
     5520,   5897,   6270,   6639,   7005,   7366,   7723,   8076,   8423,   8765,   9102,   9434,   9760,   10080,
@@ -39,42 +47,27 @@ void vgk_slot_model_set(const Model3D *model, uint8_t slot) {
     }
     slot_model[slot] = (Model3D *)model;
 }
-
+__attribute__((noinline))
 void vgk_plugin_init(void) {
-    // Geometry mode reuses decoder RAM, so quiesce DAC-driven decoder work
-    // before arming the AIADDR callback entry.
+    // Geometry mode reuses decoder RAM, so quiet DAC and disable DAC interrupts.
+    // before loading the plugin.
     vs1053_dac_mute();
     vs1053_dac_interrupt_disable();
-    vs1053_mem_write(VGK_STATUS, 0x0000);  // Clear status
-    vs1053_sci_write(SCI_AIADDR, 0x0050);
+    // load plugin binary into vs1053b and initialize plugin.
+    vs1053_plugin_load((uint32_t) 0x3F000lu, (uint32_t)(0x3F000lu + PLUGIN_SIZE_BYTES));
+    // enable projection and clipping
+    vs1053_mem_write(VGK_ENABLE_PROJECT, 0x0001);  // Enable projection
+    vs1053_sci_write(SCI_WRAM, 0x0001);                // Enable clipping
+    vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);   // boost clock x4.5 for max CLKI of 55.3 Mhz     
+
 }
 
-uint16_t vgk_plugin_signature_read(void) {
-    return vs1053_mem_read(VGK_PLUGIN_SIGNATURE);
-}
 
-uint16_t vgk_plugin_version_read(void) {
-    return vs1053_mem_read(VGK_PLUGIN_CAPS);
-}
-
-bool vgk_plugin_probe(uint16_t *version_out) {
-    uint16_t signature = vgk_plugin_signature_read();
-
-    if (signature != VGK_PLUGIN_SIGNATURE_VALUE) {
-        if (version_out != NULL) {
-            *version_out = 0;
-        }
-        return false;
+uint16_t vgk_plugin_version(void) {
+    if(vs1053_mem_read(VGK_PLUGIN_SIGNATURE) != VGK_PLUGIN_SIGNATURE_VALUE) {
+        return 0;  // Plugin not present
     }
-
-    if (version_out != NULL) {
-        *version_out = vgk_plugin_version_read();
-    }
-    return true;
-}
-
-bool vgk_plugin_loaded(void) {
-    return vgk_plugin_probe(NULL);
+    return vs1053_mem_read(VGK_PLUGIN_VERSION);
 }
 
 // Setup object transformation parameters
@@ -87,9 +80,9 @@ void vgk_obj_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale,
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
 
-// Setup object angle and scale parameters only
-void vgk_obj_angle_scale_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale) {
-    vs1053_mem_write(VGK_OBJ_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  // sets WRAMADDR, auto increments
+// Setup object euler angle and scale parameters only
+void vgk_obj_euler_scale_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale) {
+    vs1053_mem_write(VGK_OBJ_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) | scale);
 }
 
@@ -104,8 +97,21 @@ void vgk_obj_pos_set(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
 void vgk_cam_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll, int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_CAM_PITCH_YAW, (uint16_t)pitch << 8 | yaw);
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) |
-                                   0x80);  // scale not used for camera, but set scale to 1.0 (Q7) for consistency
+                                   0x80);  // scale not used for camera
     vs1053_sci_write(SCI_WRAM, pos_x);
+    vs1053_sci_write(SCI_WRAM, pos_y);
+    vs1053_sci_write(SCI_WRAM, pos_z);
+}
+
+// Setup camera euler angles (no scale) parameters only
+void vgk_cam_euler_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale) {
+    vs1053_mem_write(VGK_CAM_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  
+    vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) | 0x80); 
+}
+
+// Setup camera position only parameters
+void vgk_cam_pos_set(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
+    vs1053_mem_write(VGK_CAM_POS_X, pos_x);
     vs1053_sci_write(SCI_WRAM, pos_y);
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
@@ -116,18 +122,8 @@ void vgk_projection_params_init(int16_t focal, int16_t half_w, int16_t half_h, i
     vs1053_sci_write(SCI_WRAM, half_w);
     vs1053_sci_write(SCI_WRAM, half_h);
     vs1053_sci_write(SCI_WRAM, near_z);
-    vgk_projection_enable();
 }
 
-void vgk_projection_enable(void) {
-    vs1053_mem_write(VGK_ENABLE_PROJECT, 0x0001);  // Enable projection
-    vs1053_sci_write(SCI_WRAM, 0x0001);                // Enable clipping
-}
-
-void vgk_projection_disable(void) {
-    vs1053_mem_write(VGK_ENABLE_PROJECT, 0x0000);  // Disable projection (passthrough)
-    vs1053_sci_write(SCI_WRAM, 0x0000);                // Disable clipping
-}
 
 void vgk_model_vertices_init(const Model3D *model, uint8_t slot) {
     if (slot >= VGK_SAVE_SLOT_COUNT) return;
@@ -151,9 +147,9 @@ void vgk_near_far_coloring_enable(bool enabled) {
         vgk_descriptor_enable(true);
     } else {
         // don't disable descriptor if scene mode is active.
-        if (!vgk_scene_mode_active) {
+//        if (!vgk_scene_mode_active) {
             vgk_descriptor_enable(false);
-        }
+//        }
     }
 }
 
@@ -359,6 +355,7 @@ void vgk_line_draw(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color
 /* vgk_scrn_edges_get: Uses new stream edge reads
  * 
  */
+uint16_t max_edges=0;
 __attribute__((noinline))
 uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
 
@@ -368,15 +365,21 @@ uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
     POKE(DL_MODE, 0x01); 
     // Read number of output edges
     uint16_t edge_count = vs1053_mem_read(VGK_N_STREAM_EDGES);
-    
-    // textPrint("Edges: ");
+    // if(edge_count > max_edges) {
+    //     max_edges = edge_count;
+    // }
+    // textGotoXY(0, 6);
+    // textPrint("Edges:             ");
+    // textGotoXY(7, 6);
     // textPrintUInt(edge_count);
+    // textPrint(" / ");
+    // textPrintUInt(max_edges);
     // textPrint("\n");
     for (uint16_t e = 0; e < edge_count; ++e) {
         POKE(DL_CONTROL, (layer << 2) | 0x01); // enable + no clock        
-        // unused for now.
+        // apply coloring if descriptors enabled
         if(has_descriptors) {
-            uint16_t desc = vs1053_sci_read(SCI_WRAM); //(bit15=near, bit14=scene temporary, bits8-14=slot, bits0-7=edge_idx)
+            uint16_t desc = vs1053_sci_read(SCI_WRAM); //(bit15=near, bits8-14=slot, bits0-7=edge_idx)
             uint8_t slot = (uint8_t)((desc >> VGK_EDESC_SLOT_SHIFT) & VGK_EDESC_SLOT_MASK);
             uint8_t edge_idx = (uint8_t)(desc & VGK_EDESC_IDX_MASK);
             if (slot < VGK_SAVE_SLOT_COUNT && slot_model[slot] != NULL) {
@@ -422,18 +425,18 @@ uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
 void vgk_scene_enable(bool enabled) {
     vgk_scene_mode_active = enabled;
     vs1053_mem_write(VGK_SCENE_ENABLE, enabled ? 0x0001 : 0x0000);
-    if (enabled) {
-        vgk_descriptor_enable(true);
-    } else {
-        // don't disable descriptor if near_far_coloring mode is active.
-        if (!vgk_near_far_coloring) {
-            vgk_descriptor_enable(false);
-        }
-    }    
+    // if (enabled) {
+    //     vgk_descriptor_enable(true);
+    // } else {
+    //     // don't disable descriptor if near_far_coloring mode is active.
+    //     if (!vgk_near_far_coloring) {
+    //         vgk_descriptor_enable(false);
+    //     }
+    // }    
 }
 
 void vgk_scene_no_occlusion_enable(void) {
-    vs1053_mem_write(VGK_SCENE_FLAGS, VGK_SCENE_FLAG_NO_OCCLUSION);
+    vs1053_mem_write(VGK_SCENE_FLAGS, VGK_SCENE_FLAG_NO_OCCLUSION|VGK_SCENE_FLAG_NO_SORT);
 }
 
 void vgk_scene_no_occlusion_disable(void) {

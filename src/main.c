@@ -110,17 +110,17 @@ int main(int argc, char *argv[]) {
                  ? argv[1] : NULL;
 
     f256Init();
-    vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);
-    vs1053_plugin_load();
+    textGotoXY(0, 0);
+    textPrint("Initializing...\n");
     vgk_plugin_init();
     game_state_init(STATE_DEMO);
     input_handler_init();
     video_init();
 
     {
-        uint16_t vgk_caps = 0;
-        if (!vgk_plugin_probe(&vgk_caps)) {
-            textPrint("Geom plugin probe failed.\n");
+        uint16_t version = vgk_plugin_version();
+        if (version == 0) {
+            textPrint("Geometry plugin not detected.\n");
             return 1;
         }
     }

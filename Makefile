@@ -181,6 +181,7 @@ single_object: $(BUILD_DIR)/$(SINGLE_NAME).pgz
 single_object_overlay: dirs
 	@mkdir -p $(SINGLE_SRC_STAGING)/assets $(SINGLE_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(SINGLE_SRC_STAGING)/
+	@cp $(ROOT)/src/geometry_kernel.c $(SINGLE_SRC_STAGING)/
 	@cp -a $(ROOT)/src/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(SINGLE_OVERLAY_DIR)/assets/ 2>/dev/null || true
@@ -254,7 +255,7 @@ MULTI_NAME := multi_object_scene
 MULTI_SRC := examples/multi_object_scene.c
 MULTI_OBJ := $(BUILD_DIR)/$(MULTI_NAME).o
 MULTI_ASM := $(BUILD_DIR)/$(MULTI_NAME).s
-MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/timer.o
 MULTI_OBJS := $(MULTI_OBJ) $(MULTI_DEPS)
 # Separate overlay output dir for multi_object_scene (only plugin_data, no other assets)
 MULTI_OVERLAY_DIR := $(BUILD_DIR)/mo
@@ -268,6 +269,8 @@ $(MULTI_NAME): $(BUILD_DIR)/$(MULTI_NAME).pgz
 multi_object_overlay: dirs
 	@mkdir -p $(MULTI_SRC_STAGING)/assets $(MULTI_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(MULTI_SRC_STAGING)/
+	@cp $(ROOT)/src/geometry_kernel.c $(MULTI_SRC_STAGING)/
+	@cp $(ROOT)/src/timer.c $(MULTI_SRC_STAGING)/	
 	@cp -a $(ROOT)/src/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(MULTI_OVERLAY_DIR)/assets/ 2>/dev/null || true
@@ -350,6 +353,7 @@ $(MAX_NAME): $(BUILD_DIR)/$(MAX_NAME).pgz
 max_object_overlay: dirs
 	@mkdir -p $(MAX_SRC_STAGING)/assets $(MAX_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(MAX_SRC_STAGING)/
+	@cp $(ROOT)/src/geometry_kernel.c $(MAX_SRC_STAGING)/
 	@cp -a $(ROOT)/src/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(MAX_OVERLAY_DIR)/assets/ 2>/dev/null || true

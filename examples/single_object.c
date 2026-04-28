@@ -8,8 +8,6 @@
 static uint8_t visible_layer = 1;
 void app_init(void) {
     textGotoXY(0, 0);
-    vs1053_clock_boost(SC_MULT_x45, SC_ADD_x00);
-    vs1053_plugin_load();   
     vgk_plugin_init();
     vgk_projection_params_init(240, 160, 120, -128);
     vgk_model_slot_init(&g_model_cube, 0);
@@ -42,15 +40,21 @@ int main(int argc, char *argv[]) {
     (void)argv;
     uint8_t obj_yaw = 0;
     uint8_t obj_pitch = 0;
-
+    uint16_t version = 0;
     video_init();
     app_init();
-    if (!vgk_plugin_loaded()) {
-        textPrint("Geom plugin probe failed.\n");getchar();
+    textGotoXY(0, 1);
+    version = vgk_plugin_version();
+    if (version == 0) {
+        textPrint("Geometry plugin not detected.\n");
         return 1;
     }
-    textGotoXY(0, 0);
-    textPrint("App Init Complete. \n");
+    textPrint("Geometry Plugin Version: ");
+    textPrintUInt(version/256);
+    textPrint(".");
+    textPrintUInt(version%256);
+    textPrint("\n");
+    textPrint("App Init Complete. \n");    
     // make cube active object
     vgk_model_load(0);
     for (uint8_t loops = 0; loops < 4; loops++) {
