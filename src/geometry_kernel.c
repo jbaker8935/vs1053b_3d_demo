@@ -1,3 +1,21 @@
+/**
+ * @file geometry_kernel.c
+ * @brief VS1053b Geometry Kernel (VGK) — host-side implementation.
+ *
+ * Implements all public API functions declared in geometry_kernel.h.  Each
+ * function communicates with the DSP plugin through the VS1053b SCI/SPI
+ * interface using `vs1053_mem_write()`, `vs1053_sci_write()`, and
+ * `vs1053_sci_read()`.
+ *
+ * ### Internal state
+ * - `slot_object[]` — maps save-slot indices to their host-side
+ *   @ref Object3D pointers so that @ref vgk_scrn_edges_render() can look up
+ *   per-edge colors from the descriptor words in the edge stream.
+ * - `vgk_edge_coloring_mode` — current @ref edge_coloring_t mode; controls
+ *   whether descriptor words are enabled and how they are interpreted.
+ * - `g_yield_cb` — optional callback invoked on each polling iteration of
+ *   @ref vgk_wait_complete() instead of the default NOP delay.
+ */
 #include "f256lib.h"
 #include "../include/geometry_kernel.h"
 
@@ -12,8 +30,9 @@
 /* The address *must* be a numeric value.  You cannot use a define or a variable */
 
 EMBED(plugin_data,"assets/plugin.bin",0x3F000lu);
-#define PLUGIN_SIZE_BYTES (17102lu) 
+#define PLUGIN_SIZE_BYTES (17102lu)
 
+/** @copydoc vgk_plugin_init */
 __attribute__((noinline))
 void vgk_plugin_init(void) {
     // Geometry mode reuses decoder RAM, so quiet DAC and disable DAC interrupts.
@@ -31,9 +50,10 @@ void vgk_plugin_init(void) {
 
 static edge_coloring_t vgk_edge_coloring_mode = false;
 
-// Structure to hold a reference to edge colors for an object loaded into a slot.
+/** Internal table: maps save-slot index to its host-side Object3D pointer for color look-up. */
 Object3D * slot_object[VGK_SAVE_SLOT_COUNT] = {NULL};
 
+/** @copydoc vgk_slot_object */
 void vgk_slot_object(const Object3D* obj, uint8_t slot) {
     if(slot >= VGK_SAVE_SLOT_COUNT) {
         return;  // Invalid slot; do nothing
@@ -42,6 +62,7 @@ void vgk_slot_object(const Object3D* obj, uint8_t slot) {
 }
 
 
+/** @copydoc vgk_plugin_version */
 uint16_t vgk_plugin_version(void) {
     if(vs1053_mem_read(VGK_PLUGIN_SIGNATURE) != VGK_PLUGIN_SIGNATURE_VALUE) {
         return 0;  // Plugin not present
@@ -49,7 +70,7 @@ uint16_t vgk_plugin_version(void) {
     return vs1053_mem_read(VGK_PLUGIN_VERSION);
 }
 
-// Setup object transformation parameters
+/** @copydoc vgk_obj_params */
 void vgk_obj_params(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale, int16_t pos_x, int16_t pos_y,
                          int16_t pos_z) {
     vs1053_mem_write(VGK_OBJ_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  // sets WRAMADDR, auto increments
@@ -59,20 +80,20 @@ void vgk_obj_params(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale, int
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
 
-// Setup object euler angle and scale parameters only
+/** @copydoc vgk_obj_angle_scale */
 void vgk_obj_angle_scale(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale) {
     vs1053_mem_write(VGK_OBJ_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) | scale);
 }
 
-// Setup object position only parameters
+/** @copydoc vgk_obj_pos */
 void vgk_obj_pos(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_OBJ_POS_X, pos_x);
     vs1053_sci_write(SCI_WRAM, pos_y);
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
 
-// Setup camera transformation parameters
+/** @copydoc vgk_cam_params */
 void vgk_cam_params(uint8_t pitch, uint8_t yaw, uint8_t roll, int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_CAM_PITCH_YAW, (uint16_t)pitch << 8 | yaw);
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) |
@@ -82,20 +103,20 @@ void vgk_cam_params(uint8_t pitch, uint8_t yaw, uint8_t roll, int16_t pos_x, int
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
 
-// Setup camera euler angles (no scale) parameters only
+/** @copydoc vgk_cam_angle */
 void vgk_cam_angle(uint8_t pitch, uint8_t yaw, uint8_t roll) {
     vs1053_mem_write(VGK_CAM_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) | 0x80); 
 }
 
-// Setup camera position only parameters
+/** @copydoc vgk_cam_pos */
 void vgk_cam_pos(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_CAM_POS_X, pos_x);
     vs1053_sci_write(SCI_WRAM, pos_y);
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
 
-// Setup camera transformation parameters
+/** @copydoc vgk_projection_params */
 void vgk_projection_params(int16_t focal, int16_t half_w, int16_t half_h, int16_t near_z) {
     vs1053_mem_write(VGK_PROJ_FOCAL, focal);
     vs1053_sci_write(SCI_WRAM, half_w);
@@ -104,6 +125,7 @@ void vgk_projection_params(int16_t focal, int16_t half_w, int16_t half_h, int16_
 }
 
 
+/** @copydoc vgk_model_vertices */
 void vgk_model_vertices(const Geom3D *model, uint8_t slot) {
     if (slot >= VGK_SAVE_SLOT_COUNT) return;
     uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
@@ -116,10 +138,12 @@ void vgk_model_vertices(const Geom3D *model, uint8_t slot) {
     }
 }
 
+/** Internal: enable or disable edge descriptor word output from the DSP. */
 static void vgk_edge_descriptor(bool enabled) {
     vs1053_mem_write(VGK_ENABLE_DESCRIPTOR, enabled ? 0x0001 : 0x0000);
 }
 
+/** @copydoc vgk_edge_coloring */
 void vgk_edge_coloring(edge_coloring_t mode) {
     vgk_edge_coloring_mode = mode;
     // enable discriptor for any coloring mode
@@ -130,10 +154,12 @@ void vgk_edge_coloring(edge_coloring_t mode) {
     }
 }
 
+/** @copydoc vgk_hidden_line */
 void vgk_hidden_line(bool enabled) {
     vs1053_mem_write(VGK_ENABLE_HIDDEN_LINE, enabled ? 0x0001 : 0x0000);
 }
 
+/** @copydoc vgk_model_hidden_line */
 void vgk_model_hidden_line(const Geom3D *model, uint8_t slot) {
     if (slot >= VGK_SAVE_SLOT_COUNT) return;
     uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
@@ -178,6 +204,7 @@ void vgk_model_hidden_line(const Geom3D *model, uint8_t slot) {
     vs1053_mem_write(base + VGK_SLOT_N_FACES, face_count);   
 }
 
+/** @copydoc vgk_model_save */
 void vgk_model_save(const Object3D *obj, uint8_t slot) {
     // Write geometry directly to the save slot
     // The plugin may consume the selected slot directly via active-base words.
@@ -187,6 +214,7 @@ void vgk_model_save(const Object3D *obj, uint8_t slot) {
     vgk_model_hidden_line(obj->geometry, slot);
 }
 
+/** @copydoc vgk_model_edges */
 void vgk_model_edges(const Geom3D *model, uint8_t slot) {
     if (slot >= VGK_SAVE_SLOT_COUNT) return;
     uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
@@ -197,32 +225,30 @@ void vgk_model_edges(const Geom3D *model, uint8_t slot) {
     }
 }
 
-/* Yield callback called on each wait-loop iteration.  NULL = nop-delay only. */
+/** Yield callback called on each wait-loop iteration.  NULL = nop-delay only. */
 static void (*g_yield_cb)(void) = NULL;
 
+/** @copydoc vgk_yield_cb */
 void vgk_yield_cb(void (*cb)(void)) {
     g_yield_cb = cb;
 }
 
-/* Call the registered yield callback once.  */
+/** @copydoc vgk_yield */
 void vgk_yield(void) {
     if (g_yield_cb) { g_yield_cb(); }
 }
 
+/** @copydoc vgk_reset */
 void vgk_reset(void) {
     vs1053_mem_write(VGK_STATUS, 0x0000);
 }
 
-// Call the plugin entry point
+/** @copydoc vgk_trigger */
 void vgk_trigger(void) {
     vs1053_sci_write(SCI_AICTRL0, VGK_TRIGGER_MAGIC);  // Set trigger to start processing
 }
 
-// load Object from internal slot
-// Sets the current object for transformation and rendering parameters, but does not trigger processing.
-// Must be called before triggering kernel for the object.
-// Note that the model does not need to be re-loaded if only tranformation parameters are changing
-// between kernel calls
+/** @copydoc vgk_model_select */
 __attribute__((noinline))
 bool vgk_model_select(uint16_t slot) {
     vgk_reset();
@@ -233,6 +259,7 @@ bool vgk_model_select(uint16_t slot) {
     return false;
 }
 
+/** @copydoc vgk_status */
 uint8_t vgk_status(void) {
     volatile uint16_t status = vs1053_mem_read(VGK_STATUS);
 
@@ -247,6 +274,7 @@ uint8_t vgk_status(void) {
     }
 }
 
+/** @copydoc vgk_wait_complete */
 uint8_t vgk_wait_complete(uint16_t timeout_ms) {
     uint16_t elapsed = 0;
     volatile uint16_t raw_status = 0;
@@ -280,6 +308,8 @@ uint8_t vgk_wait_complete(uint16_t timeout_ms) {
 // -----------------------------------------------------------------------------
 // State capture helper
 // -----------------------------------------------------------------------------
+
+/** @copydoc vgk_plugin_capture_state */
 void vgk_plugin_capture_state(PluginCapture *cap) {
     // camera inputs
     cap->cam_pitch_yaw = vs1053_mem_read(VGK_CAM_PITCH_YAW);
@@ -314,6 +344,7 @@ void vgk_plugin_capture_state(PluginCapture *cap) {
 
 }
 
+/** @copydoc vgk_line_draw */
 void vgk_line_draw(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color, uint8_t layer) {
     POKE(DL_COLOR, color);
     POKE(DL_MODE, 0x01); 
@@ -329,10 +360,7 @@ void vgk_line_draw(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color
     POKE(DL_MODE, 0x00);
 }
 
-/* vgk_scrn_edges_render: Uses new stream edge reads
- * 
- */
-
+/** @copydoc vgk_scrn_edges_render */
 __attribute__((noinline))
 uint8_t vgk_scrn_edges_render(uint8_t layer, uint8_t default_color) {
 
@@ -383,12 +411,8 @@ uint8_t vgk_scrn_edges_render(uint8_t layer, uint8_t default_color) {
 // =============================================================================
 // Scene API implementation
 // =============================================================================
-// These functions program the VGK_SCENE_* memory region so the DSP scene
-// loop can iterate over multiple saved objects in a single trigger.  The host
-// writes the descriptor, triggers the kernel, then reads combined results.
-//
 
-
+/** @copydoc vgk_scene_mode */
 void vgk_scene_mode(bool enabled) {
     vs1053_mem_write(VGK_SCENE_ENABLE, enabled ? 0x0001 : 0x0000); 
     // default occlusion on when scene mode enabled
@@ -399,10 +423,12 @@ void vgk_scene_mode(bool enabled) {
     }
 }
 
+/** @copydoc vgk_scene_occlusion */
 void vgk_scene_occlusion(bool enabled) {
     vs1053_mem_write(VGK_SCENE_FLAGS, enabled ? 0x0000 : VGK_SCENE_FLAG_NO_OCCLUSION|VGK_SCENE_FLAG_NO_SORT);
 }
 
+/** @copydoc vgk_scene_objects */
 void vgk_scene_objects(uint8_t n_objects, const SceneObjectParams *objects) {
     if (n_objects > VGK_SCENE_MAX_OBJECTS) {
         n_objects = VGK_SCENE_MAX_OBJECTS;
@@ -413,6 +439,7 @@ void vgk_scene_objects(uint8_t n_objects, const SceneObjectParams *objects) {
     }
 }
 
+/** @copydoc vgk_scene_object_params */
 void vgk_scene_object_params(uint8_t index, const SceneObjectParams *obj) {
     if (index >= VGK_SCENE_MAX_OBJECTS) {
         return;
@@ -434,6 +461,7 @@ void vgk_scene_object_params(uint8_t index, const SceneObjectParams *obj) {
 // Scene results readback
 // ---------------------------------------------------------------------------
 
+/** @copydoc vgk_scene_get_result */
 void vgk_scene_get_result(SceneResult *result) {
     result->total_verts = vs1053_mem_read(VGK_SCENE_TOTAL_VERTS);
     result->total_edges = vs1053_mem_read(VGK_SCENE_TOTAL_EDGES);
@@ -441,6 +469,7 @@ void vgk_scene_get_result(SceneResult *result) {
     result->n_objects   = (uint8_t)vs1053_mem_read(VGK_SCENE_N_OBJECTS);
 }
 
+/** @copydoc vgk_scene_object_meta_get */
 void vgk_scene_object_meta_get(uint8_t index, SceneObjectMeta *meta) {
     if (index >= VGK_SCENE_MAX_OBJECTS) {
         return;
@@ -460,6 +489,7 @@ void vgk_scene_object_meta_get(uint8_t index, SceneObjectMeta *meta) {
     meta->aabb_max_y  = (int16_t)vs1053_mem_read(aabb_addr + 3);
 }
 
+/** @copydoc vgk_scene_render */
 uint8_t vgk_scene_render(uint8_t n_objects,
                                 const SceneObjectParams *objects,
                                 uint8_t default_color,

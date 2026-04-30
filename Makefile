@@ -45,27 +45,11 @@ COMPILE = $(CC) -c $(CFLAGS) -o $@ $<
 
 COMPILE_ASM = $(CC) -c $(ASMFLAGS) -o $@ $<
 
-# Host C compiler for build-time tools (used to compile the offsets generator)
-CC_HOST ?= cc
-
-# Build an offsets generator binary using the host compiler
-tools/gen_offsets: tools/generate_offsets.c | dirs
-	$(CC_HOST) -Iinclude -DGENERATE_OFFSETS $< -o $@
-
-# Target-derived struct offsets (authoritative): compile with llvm-mos and extract `.equ` lines.
-build/struct_offsets_emit.s: tools/struct_offsets_emit.c include/draw_line.h include/3d_object.h include/3d_math.h | dirs
-	$(CC) -S $(CFLAGS) -o $@ $<
-
-# Generated assembler offsets (single shared file)
-build/struct_offsets.inc: build/struct_offsets_emit.s | dirs
-	$(PYTHON) tools/extract_struct_offsets_equ.py $< > $@
 
 # Compile both C and assembly with the same command (mos-f256-clang)
 $(BUILD_DIR)/%.o: src/%.c | dirs
 	$(COMPILE)
 
-$(BUILD_DIR)/%.o: src/%.s build/struct_offsets.inc | dirs
-	$(COMPILE_ASM)
 
 # Compile the bench harness (not in src/) so it can be built independently
 $(BUILD_DIR)/bench_mul.o: tools/bench_mul.c | dirs
