@@ -6,7 +6,7 @@
 
 #include <string.h>
 
-extern void vgk_cam_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll,
+extern void vgk_cam_params(uint8_t pitch, uint8_t yaw, uint8_t roll,
                                  int16_t pos_x, int16_t pos_y, int16_t pos_z);
 
 extern int32_t mathSignedMultiply(int16_t a, int16_t b);
@@ -19,7 +19,7 @@ void reset_camera(void) {
     vec3_t cam_pos = {0, 200, 2400};
     camera_init(&g_ctx.wireframe.camera, cam_pos);
     Camera *camera = &g_ctx.wireframe.camera;
-    vgk_cam_params_set(
+    vgk_cam_params(
         camera->pitch, camera->yaw, camera->roll,
         camera->position.x, camera->position.y, camera->position.z);
     camera->moved = true;

@@ -167,7 +167,7 @@ SINGLE_NAME := single_object
 SINGLE_SRC := examples/single_object.c
 SINGLE_OBJ := $(BUILD_DIR)/$(SINGLE_NAME).o
 SINGLE_ASM := $(BUILD_DIR)/$(SINGLE_NAME).s
-SINGLE_DEPS := $(BUILD_DIR)/3d_object.o  $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+SINGLE_DEPS := $(BUILD_DIR)/3d_object.o  $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/3d_math.o
 SINGLE_OBJS := $(SINGLE_OBJ) $(SINGLE_DEPS)
 # Separate overlay output dir for single_object (only plugin_data, no other assets)
 SINGLE_OVERLAY_DIR := $(BUILD_DIR)/so
@@ -182,6 +182,7 @@ single_object_overlay: dirs
 	@mkdir -p $(SINGLE_SRC_STAGING)/assets $(SINGLE_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(SINGLE_SRC_STAGING)/
 	@cp $(ROOT)/src/geometry_kernel.c $(SINGLE_SRC_STAGING)/
+	@cp $(ROOT)/src/3d_math.c $(SINGLE_SRC_STAGING)/
 	@cp -a $(ROOT)/src/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(SINGLE_OVERLAY_DIR)/assets/ 2>/dev/null || true
@@ -255,7 +256,7 @@ MULTI_NAME := multi_object_scene
 MULTI_SRC := examples/multi_object_scene.c
 MULTI_OBJ := $(BUILD_DIR)/$(MULTI_NAME).o
 MULTI_ASM := $(BUILD_DIR)/$(MULTI_NAME).s
-MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/timer.o
+MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/3d_math.o
 MULTI_OBJS := $(MULTI_OBJ) $(MULTI_DEPS)
 # Separate overlay output dir for multi_object_scene (only plugin_data, no other assets)
 MULTI_OVERLAY_DIR := $(BUILD_DIR)/mo
@@ -270,7 +271,7 @@ multi_object_overlay: dirs
 	@mkdir -p $(MULTI_SRC_STAGING)/assets $(MULTI_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(MULTI_SRC_STAGING)/
 	@cp $(ROOT)/src/geometry_kernel.c $(MULTI_SRC_STAGING)/
-	@cp $(ROOT)/src/timer.c $(MULTI_SRC_STAGING)/	
+	@cp $(ROOT)/src/3d_math.c $(MULTI_SRC_STAGING)/
 	@cp -a $(ROOT)/src/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(MULTI_OVERLAY_DIR)/assets/ 2>/dev/null || true
@@ -341,7 +342,7 @@ MAX_NAME := max_object_scene
 MAX_SRC := examples/max_object_scene.c
 MAX_OBJ := $(BUILD_DIR)/$(MAX_NAME).o
 MAX_ASM := $(BUILD_DIR)/$(MAX_NAME).s
-MAX_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+MAX_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/3d_math.o
 MAX_OBJS := $(MAX_OBJ) $(MAX_DEPS)
 MAX_OVERLAY_DIR := $(BUILD_DIR)/maxo
 MAX_SRC_STAGING := $(BUILD_DIR)/maxo_src
@@ -354,6 +355,7 @@ max_object_overlay: dirs
 	@mkdir -p $(MAX_SRC_STAGING)/assets $(MAX_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(MAX_SRC_STAGING)/
 	@cp $(ROOT)/src/geometry_kernel.c $(MAX_SRC_STAGING)/
+	@cp $(ROOT)/src/3d_math.c $(MAX_SRC_STAGING)/
 	@cp -a $(ROOT)/src/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(MAX_OVERLAY_DIR)/assets/ 2>/dev/null || true

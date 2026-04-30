@@ -110,10 +110,10 @@ static SceneObjectParams scene_objs[32] = {
 static uint8_t visible_layer = 1;
 void app_init(void) {   
     vgk_plugin_init();
-    vgk_projection_params_init(240, 160, 120, -128);
-    vgk_model_slot_init(&g_model_cube, 0);
-    vgk_cam_params_set(0, 0, 0, -200, 0, 2000);
-    vgk_hidden_line_enable();
+    vgk_projection_params(240, 160, 120, -128);
+    vgk_model_save(&g_model_cube, 0);
+    vgk_cam_params(0, 0, 0, -200, 0, 2000);
+    vgk_hidden_line(true);
 }
 
 void app_frame() {
@@ -125,7 +125,7 @@ void app_frame() {
     if (status == 1) {
         // retrieve and draw edges for the whole scene (all objects at once)
         // textPrint("Rendering scene with edge retrieval... \n");
-        vgk_scrn_edges_get(draw_layer, 0x0A);
+        vgk_scrn_edges_render(draw_layer, 0x0A);
     } else if (status == 0){
         textPrint("Error: Geometry kernel timeout.\n");
     } else {
@@ -160,14 +160,14 @@ int main(int argc, char *argv[]) {
     textPrint("\n");
     textPrint("App Init Complete. \n");
     // use scene API for multi-object demo
-    vgk_scene_enable(true);
-    vgk_scene_set_descriptor(32, scene_objs);
-    vgk_scene_no_occlusion_disable();    
+    vgk_scene_mode(true);
+    vgk_scene_objects(32, scene_objs);
+    vgk_scene_occlusion(true);    
     for (uint8_t loop = 0; loop < 4; loop++) {
 
         for(uint16_t frame=0; frame < 256; frame++) {
             object_swarm_update(scene_objs, 32, frame);
-            vgk_scene_set_descriptor(32, scene_objs);
+            vgk_scene_objects(32, scene_objs);
             app_frame();
         }
     }

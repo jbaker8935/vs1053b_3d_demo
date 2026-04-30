@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "../include/3d_object.h"
-#include "../include/3d_pipeline.h"
 #include "../include/draw_line.h"
 #include "../include/geometry_kernel.h"
 #include "../include/video.h"
@@ -61,7 +60,7 @@ __attribute__((noinline)) void render_frame(GameContext *ctx) {
 
     Camera *camera = &ctx->wireframe.camera;
     if (camera->moved) {
-        vgk_cam_params_set(camera->pitch, camera->yaw, camera->roll,
+        vgk_cam_params(camera->pitch, camera->yaw, camera->roll,
                             camera->position.x, camera->position.y,
                             camera->position.z);
         camera->moved = false;

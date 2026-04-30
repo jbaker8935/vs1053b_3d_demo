@@ -219,7 +219,6 @@
 
 #define VGK_SCENE_SCRATCH      0x0E40   // 10 words scratch for scene loop
 
-extern const int16_t sin_table[256];
 // When true, objects us the near color for all edges. Improved rendering speed, but no depth coloring.
 extern bool vgk_no_near_far_coloring;
 // When true, hidden-line removal is active; fast path is suppressed. 'Fast path' is optimized
@@ -236,7 +235,7 @@ uint16_t vgk_plugin_version(void);  // returns 0 if plugin not present, otherwis
 // Smaller focal and near_z values increase the perspective distortion effect, but risk clipping artifacts. *test*
 
 
-void vgk_projection_params_init(int16_t focal, int16_t half_w, int16_t half_h,
+void vgk_projection_params(int16_t focal, int16_t half_w, int16_t half_h,
                          int16_t near_z);  
 
 
@@ -248,33 +247,39 @@ void vgk_projection_params_init(int16_t focal, int16_t half_w, int16_t half_h,
 * For most use cases, vgk_model_slot_init is the only one used.
 * */
 
-void vgk_model_slot_init(const Model3D* model, uint8_t slot);
-void vgk_model_vertices_init(const Model3D* model, uint8_t slot);
-void vgk_model_edges_init(const Model3D* model, uint8_t slot);
-void vgk_model_hidden_line_init(const Model3D* model, uint8_t slot);
+void vgk_model_save(const Object3D * obj, uint8_t slot);
+void vgk_model_vertices(const Geom3D* model, uint8_t slot);
+void vgk_model_edges(const Geom3D* model, uint8_t slot);
+void vgk_model_hidden_line(const Geom3D* model, uint8_t slot);
 
 // Selects a saved slot as the current object for processing.
 // The plugin may use slot memory directly via active-base indirection.
-bool vgk_model_load(uint16_t slot);  
+bool vgk_model_select(uint16_t slot);  
 
 // set the current object's transformation parameters.
-void vgk_obj_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale,
+void vgk_obj_params(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale,
     int16_t pos_x, int16_t pos_y, int16_t pos_z);
     
 // Angle and scale update only.
-void vgk_obj_angle_scale_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale);
+void vgk_obj_angle_scale(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale);
 // Position-only update.
-void vgk_obj_pos_set(int16_t pos_x, int16_t pos_y, int16_t pos_z);
+void vgk_obj_pos(int16_t pos_x, int16_t pos_y, int16_t pos_z);
 
 // set the camera parameters (angles, position).  The camera is shared across all objects.
-void vgk_cam_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll,
+void vgk_cam_params(uint8_t pitch, uint8_t yaw, uint8_t roll,
     int16_t pos_x, int16_t pos_y, int16_t pos_z);
+void vgk_cam_angle_set(uint8_t pitch, uint8_t yaw, uint8_t roll);
+void vgk_cam_pos_set(int16_t pos_x, int16_t pos_y, int16_t pos_z);    
     
-    
-void vgk_hidden_line_enable(void);
-void vgk_hidden_line_disable(void);
+void vgk_hidden_line(bool enabled);
 
-void vgk_near_far_coloring_enable(bool enabled);
+typedef enum {
+    VGK_EC_DEFAULT,
+    VGK_EC_NEAR_FAR,
+    VGK_EC_EDGE_COLORING
+} edge_coloring_t;
+
+void vgk_edge_coloring(edge_coloring_t mode);
 
 void vgk_trigger(void);
 uint8_t vgk_wait_complete(uint16_t timeout_ms);
@@ -285,13 +290,13 @@ uint8_t vgk_wait_complete(uint16_t timeout_ms);
 // for processing by draw_lines_from_list.
 // Not currently optimized. So vgk_scrn_edges_with_depth_get is recommended.
 //
-uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t color);
+uint8_t vgk_scrn_edges_render(uint8_t layer, uint8_t color);
 
 /* Register a callback that vgk_yield() calls on every
 * polling iteration instead of the default nop-delay.  Pass NULL to restore
 * the default behavior.  Intended for audio tick servicing during DSP waits
 * so that the audio loop is not starved when multiple objects are rendered. */
-void vgk_yield_cb_set(void (*cb)(void));
+void vgk_yield_cb(void (*cb)(void));
 void vgk_yield(void);
 
 void vgk_line_draw(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color, uint8_t layer);
@@ -388,16 +393,14 @@ typedef struct {
 
 // Enable or disable scene mode.  When enabled the next trigger_geometry_kernel()
 // call processes all objects in the scene descriptor instead of a single object.
-void vgk_scene_enable(bool enabled);
-void vgk_scene_no_occlusion_enable(void);
-void vgk_scene_no_occlusion_disable(void);
-
+void vgk_scene_mode(bool enabled);
+void vgk_scene_occlusion(bool enabled);
 // Write the full scene descriptor: object count and per-object params.
 // `n_objects` is clamped to VGK_SCENE_MAX_OBJECTS.
-void vgk_scene_set_descriptor(uint8_t n_objects, const SceneObjectParams *objects);
+void vgk_scene_objects(uint8_t n_objects, const SceneObjectParams *objects);
 
 // Write a single object record within the scene descriptor at `index`.
-void vgk_scene_set_object(uint8_t index, const SceneObjectParams *obj);
+void vgk_scene_object_params(uint8_t index, const SceneObjectParams *obj);
 
 // Set only the object count (useful when params are pre-written).
 void vgk_scene_set_object_count(uint8_t n_objects);
@@ -429,8 +432,8 @@ uint16_t vgk_scene_read_clip_screen(int16_t *sx_out, int16_t *sy_out,
 // Render scene edges object-by-object with immediate draw flushes.
 // Returns number of visible edges written.
 // TODO: optimzed assembly
-uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects, const SceneObjectParams *objects,
-                                uint8_t near_color, uint8_t far_color,
+uint8_t vgk_scene_render(uint8_t n_objects, const SceneObjectParams *objects,
+                                uint8_t default_color,
                                 uint8_t draw_layer);
 
 #endif // GEOMETRY_KERNEL_H

@@ -100,8 +100,8 @@ static void process_vgm_tick(void) {
 }
 
 static void init_models(void) {
-    vgk_model_slot_init(&g_model_cube, 0);
-    vgk_model_slot_init(&g_model_anaconda, 1);
+    vgk_model_save(&g_model_cube, 0);
+    vgk_model_save(&g_model_anaconda, 1);
 }
 
 int main(int argc, char *argv[]) {
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
     }
 
     // 4:3 aspect 320x240 with vertical fov 90 degrees
-    vgk_projection_params_init(240, 160, 120, -128);
+    vgk_projection_params(240, 160, 120, -128);
 
     init_models();
     codec_init();
@@ -154,7 +154,7 @@ int main(int argc, char *argv[]) {
       start_vgm_playback();
     }
 
-    vgk_yield_cb_set(process_vgm_tick);  /* service audio during DSP waits */
+    vgk_yield_cb(process_vgm_tick);  /* service audio during DSP waits */
 
     demos_register();
     demo_engine_start(0);

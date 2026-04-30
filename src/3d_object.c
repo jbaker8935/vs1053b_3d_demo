@@ -12,7 +12,7 @@ static const int16_t g_projectile_vy[4] = { P_SCALE, -P_SCALE,  P_SCALE, -P_SCAL
 static const int16_t g_projectile_vz[4] = { P_SCALE, -P_SCALE, -P_SCALE,  P_SCALE };
 static const uint8_t g_projectile_edge_a[6] = { 0, 0, 0, 1, 1, 2 };
 static const uint8_t g_projectile_edge_b[6] = { 1, 2, 3, 2, 3, 3 };
-const Model3D g_model_projectile = {
+const Geom3D g_geom_projectile = {
     .vertex_count = 4,
     .edge_count = 6,
     .vx = g_projectile_vx,
@@ -24,9 +24,14 @@ const Model3D g_model_projectile = {
     .center_y = 0,
     .center_z = 0,
     .radius = P_SCALE * 1.732, // SCALE * sqrt(3)
-    .object_color = 0x0A0A,    // red projectile
     .face_count   = 0,    
 };
+
+const Object3D g_model_projectile = {
+    .geometry = &g_geom_projectile,
+    .object_color = 0x020A, // bright color for testing
+    .edge_color_count = 0,
+    .edge_color = NULL };
 
 
 // Starfield
@@ -66,7 +71,7 @@ static const uint8_t g_stars_edge_b[32] = {
     30, 31
 };
 
-const Model3D g_model_starfield = {
+const Geom3D g_geom_starfield = {
     .vertex_count = 32,
     .edge_count   = 32,        
     .vx = g_stars_vx,
@@ -78,13 +83,18 @@ const Model3D g_model_starfield = {
     .center_y = 0,
     .center_z = 0,
     .radius   = 1,             // not used
-    .object_color = 0x0F0F,    // default white.  could vary brightness.
     .face_count   = 0,
 };
 
+const Object3D g_model_starfield = {
+    .geometry = &g_geom_starfield,
+    .object_color = 0x0F0F, // bright color for testing
+    .edge_color_count = 0,
+    .edge_color = NULL };
+
 static const int16_t g_cube_vx[8] = {
     -1 * SCALE, -1 * SCALE, -1 * SCALE, -1 * SCALE,
-     1 * SCALE,  1 * SCALE,  1 * SCALE,  1 * SCALE,
+    1 * SCALE,  1 * SCALE,  1 * SCALE,  1 * SCALE,
 };
 static const int16_t g_cube_vy[8] = {
     -1 * SCALE, -1 * SCALE,  1 * SCALE,  1 * SCALE,
@@ -121,7 +131,7 @@ static const uint8_t g_cube_edge_face1[12] = {
     2, 4, 4, 5, 5, 3, 4, 5, 2, 4, 5, 3,
 };
 
-const Model3D g_model_cube = {
+const Geom3D g_geom_cube = {
     .vertex_count = 8,  
     .edge_count = 12,   
     .vx = g_cube_vx,
@@ -133,13 +143,19 @@ const Model3D g_model_cube = {
     .center_y = 0,
     .center_z = 0,
     .radius = 173, // sqrt(3*100^2)
-    .object_color = 0x0D0B,
     .face_count = 6,
     .face_nx = g_cube_face_nx,
     .face_ny = g_cube_face_ny,
     .face_nz = g_cube_face_nz,
     .edge_face0 = g_cube_edge_face0,
     .edge_face1 = g_cube_edge_face1,
+};
+
+const Object3D g_model_cube = {
+    .geometry = &g_geom_cube,
+    .object_color = 0x0D0B, // near far blue
+    .edge_color_count = 0,
+    .edge_color = NULL
 };
 
 // Elite 6502 shape: ANACONDA
@@ -153,14 +169,15 @@ static const int16_t anaconda_face_ny[12] = { -11815, 2879, -9562, -16131, -9562
 static const int16_t anaconda_face_nz[12] = { -11351, -13915, -3187, 2868, -3187, -13915, -2905, 3193, 4218, 4218, 3193, 3081 };
 static const uint8_t anaconda_edge_face0[25] = { 0, 0, 1, 0, 1, 0, 2, 0, 3, 4, 1, 5, 1, 2, 2, 3, 3, 4, 4, 5, 7, 6, 7, 9, 10 };
 static const uint8_t anaconda_edge_face1[25] = { 1, 5, 5, 2, 2, 3, 3, 4, 4, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 8, 10, 11 };
-const Model3D g_model_anaconda = {
+
+
+const Geom3D g_geom_anaconda = {
     .vertex_count = 15,
     .edge_count = 25,
     .center_x = 0,
     .center_y = 3,
     .center_z = 98,
     .radius = 157,
-    .object_color = 0x0D0B,    
     .vx = anaconda_vx,
     .vy = anaconda_vy,
     .vz = anaconda_vz,
@@ -172,6 +189,13 @@ const Model3D g_model_anaconda = {
     .face_nz = anaconda_face_nz,
     .edge_face0 = anaconda_edge_face0,
     .edge_face1 = anaconda_edge_face1
+};
+
+const Object3D g_model_anaconda = {
+    .geometry = &g_geom_anaconda,
+    .object_color = 0x0D0B, // near far blue
+    .edge_color_count = 0,
+    .edge_color = NULL
 };
 
 
@@ -239,15 +263,13 @@ static const uint8_t to_edge_face1[36] = {
     13, 13, 10, 11, 12, 13
 };
 
-const Model3D g_model_truncated_octahedron = {
+const Geom3D g_geom_truncated_octahedron = {
     .vertex_count = 24,
     .edge_count   = 36,
     .center_x = 0,
     .center_y = 0,
     .center_z = 0,
     .radius   = 108 * TO_SCALE, // Not used
-
-    .object_color = 0x0D0B,
 
     .vx = to_vx,
     .vy = to_vy,
@@ -263,6 +285,13 @@ const Model3D g_model_truncated_octahedron = {
 
     .edge_face0 = to_edge_face0,
     .edge_face1 = to_edge_face1
+};
+
+const Object3D g_model_truncated_octahedron = {
+    .geometry = &g_geom_truncated_octahedron,
+    .object_color = 0x0D0B, 
+    .edge_color_count = 0,
+    .edge_color = NULL
 };
 
 /* truncated icosahedron (soccer ball)
@@ -386,15 +415,13 @@ static const uint16_t ti_edge_color[90] = {
     /* 80-89 */ 0x0707, 0x0A0A, 0x0707, 0x0A0A, 0x0A0A, 0x0707, 0x0707, 0x0A0A, 0x0707, 0x0A0A,
 };
 
-const Model3D g_model_truncated_icosahedron = {
+const Geom3D g_geom_truncated_icosahedron = {
     .vertex_count = 60,
     .edge_count   = 90,
     .center_x = 0,
     .center_y = 0,
     .center_z = 0,
     .radius   = 99,
-
-    .object_color = 0x0D0B,
 
     .vx = ti_vx,
     .vy = ti_vy,
@@ -410,6 +437,12 @@ const Model3D g_model_truncated_icosahedron = {
 
     .edge_face0 = ti_edge_face0,
     .edge_face1 = ti_edge_face1,
+
+};
+
+const Object3D g_model_truncated_icosahedron = {
+    .geometry = &g_geom_truncated_icosahedron,
+    .object_color = 0x0707, // not used.  edge colors are used instead to distinguish pentagons vs hexagons.
     .edge_color_count = 90,
     .edge_color = ti_edge_color
 };
@@ -423,9 +456,3 @@ void camera_init(Camera *cam, vec3_t pos) {
     cam->moved = false;
 }
 
-void camera_look_at(Camera *cam, vec3_t target) {
-    // Simplified: assume looking at origin from -Z
-    cam->yaw = 0;
-    cam->pitch = 0;
-    cam->roll = 0;
-}

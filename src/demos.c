@@ -28,20 +28,20 @@ static const SceneObjectParams demo1_init[] = {
     { .slot=0, .yaw=16, .pitch=0, .roll=0, .scale=128, .pos_x=0, .pos_y=-100, .pos_z= 300 }
 };
 
-static const Model3D * const demo1_models[] = { &g_model_cube };
+static const Object3D * const demo1_models[] = { &g_model_cube };
 
 static void demo1_wireframe(void) {
-    vgk_hidden_line_disable();
-    vgk_near_far_coloring_enable(false);
+    vgk_hidden_line(false);
+    vgk_edge_coloring(VGK_EC_DEFAULT);
 }
 
 static void demo1_hidden_line(void) {
-    vgk_model_hidden_line_init(&g_model_cube, 0);
-    vgk_hidden_line_enable();
+    vgk_model_hidden_line(g_model_cube.geometry, 0);
+    vgk_hidden_line(true);
 }
 
 static void demo1_nearfar(void) {
-    vgk_near_far_coloring_enable(true);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
 }
 
 static void demo1_rotate(void) {
@@ -66,14 +66,14 @@ static void demo1_scale(void) {
 
 static void demo1_enter(void) {
     reset_camera();
-    vgk_hidden_line_disable();
-    vgk_near_far_coloring_enable(false);
-    vgk_model_slot_init(&g_model_cube, 0);    
+    vgk_hidden_line(false);
+    vgk_edge_coloring(VGK_EC_DEFAULT);
+    vgk_model_save(&g_model_cube, 0);    
 }
 
 static void demo1_exit(void) {
-    vgk_hidden_line_disable();
-    vgk_near_far_coloring_enable(true);
+    vgk_hidden_line(false);
+    vgk_edge_coloring(VGK_EC_DEFAULT);
 }
 
 static const DemoEvent demo1_events[] = {
@@ -103,19 +103,20 @@ static const Demo demo1 = {
 // Loads cube geometry into slots 2-4 with different object_color values
 // =============================================================================
 
-static Model3D g_cube2, g_cube3, g_cube4;
+static Object3D g_cube2, g_cube3, g_cube4;
 
 static void demo2_enter(void) {
     reset_camera();
-    vgk_hidden_line_disable();
-    vgk_near_far_coloring_enable(true);
+    vgk_hidden_line(false);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
+   
     g_cube2 = g_model_cube; g_cube2.object_color = 0x0505;
     g_cube3 = g_model_cube; g_cube3.object_color = 0x0707;
     g_cube4 = g_model_cube; g_cube4.object_color = 0x0909;
-    vgk_model_slot_init(&g_model_cube, 0);
-    vgk_model_slot_init(&g_cube2, 2);
-    vgk_model_slot_init(&g_cube3, 3);
-    vgk_model_slot_init(&g_cube4, 4);
+    vgk_model_save(&g_model_cube, 0);
+    vgk_model_save(&g_cube2, 2);
+    vgk_model_save(&g_cube3, 3);
+    vgk_model_save(&g_cube4, 4);
     g_demo_models[0] = &g_model_cube;
     g_demo_models[1] = &g_cube2;
     g_demo_models[2] = &g_cube3;
@@ -171,14 +172,14 @@ static const SceneObjectParams demo3_init[] = {
     { .slot=5, .yaw=9, .pitch=9, .roll=9, .scale=192, .pos_x=0, .pos_y=200, .pos_z=2400 },
 };
 
-static const Model3D * const demo3_models[] = { &g_model_anaconda, &g_model_projectile,
+static const Object3D * const demo3_models[] = { &g_model_anaconda, &g_model_projectile,
      &g_model_starfield, &g_model_starfield };
 
 static void demo3_enter(void) {
     reset_camera();
-    vgk_model_slot_init(&g_model_anaconda, 1);
-    vgk_model_slot_init(&g_model_starfield, 5);
-    vgk_model_slot_init(&g_model_projectile, 4);
+    vgk_model_save(&g_model_anaconda, 1);
+    vgk_model_save(&g_model_starfield, 5);
+    vgk_model_save(&g_model_projectile, 4);
     // graphics background
 	POKE(0xD00D, 0x00);
     POKE(0xD00E, 0x00);
@@ -187,9 +188,9 @@ static void demo3_enter(void) {
 }
 
 static void demo3_setup(void) {
-    vgk_model_hidden_line_init(&g_model_anaconda, 1);
-    vgk_hidden_line_enable();
-    vgk_near_far_coloring_enable(true);
+    vgk_model_hidden_line(g_model_anaconda.geometry, 1);
+    vgk_hidden_line(true);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
 }
 
 static void demo3_setup_anaconda_2(void) {
@@ -251,9 +252,9 @@ static void demo3_exit(void) {
     POKE(0xD00D, 0x33);
     POKE(0xD00E, 0x33);
     POKE(0xD00F, 0x33);
-    vgk_hidden_line_disable();
+    vgk_hidden_line(false);
     bitmapSetVisible(0, false);
-    vgk_near_far_coloring_enable(true);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
 }
 
 static const DemoEvent demo3_events[] = {
@@ -283,10 +284,10 @@ static const Demo demo3 = {
 // =============================================================================
 
 static const uint16_t demo4_colors[] = {
-    0x0F0B, 0x0A0F, 0x0F0C, 0x0C0F, 0x050A, 0x0A05, 0x0F02, 0x020F
+    0x0D0B, 0x0A0F, 0x0F0C, 0x0C0F, 0x050A, 0x0A05, 0x0F02, 0x020F
 };
 static uint8_t  g_d4_color_idx;
-static Model3D  g_d4_anaconda;
+static Object3D  g_d4_anaconda;
 
 static const SceneObjectParams demo4_init[] = {
     { .slot=1, .yaw=20, .pitch=10, .roll=0, .scale=160, .pos_x=-100, .pos_y=200, .pos_z=400 },
@@ -301,12 +302,13 @@ static void demo4_enter(void) {
     POKE(0xD00E, 0x00);
     POKE(0xD00F, 0x00);    
     bitmapSetVisible(0, true);
-    vgk_hidden_line_enable();
-    vgk_near_far_coloring_enable(true);
+    vgk_hidden_line(true);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
     g_d4_anaconda = g_model_anaconda;
     g_d4_color_idx = 0;
-    vgk_model_slot_init(&g_d4_anaconda, 1);
-    vgk_model_slot_init(&g_model_starfield, 5);
+    g_d4_anaconda.object_color = demo4_colors[g_d4_color_idx];
+    vgk_model_save(&g_d4_anaconda, 1);
+    vgk_model_save(&g_model_starfield, 5);
     g_demo_models[0] = &g_d4_anaconda;
     g_demo_models[1] = &g_model_starfield;
     g_demo_models[2] = &g_model_starfield;
@@ -319,6 +321,7 @@ static void demo4_static(void) {
 static void demo4_cycle(void) {
     g_d4_color_idx = (uint8_t)((g_d4_color_idx + 1u) % 8u);
     g_d4_anaconda.object_color = demo4_colors[g_d4_color_idx];
+    vgk_model_save(&g_d4_anaconda, 1);
     g_demo_instances[0].yaw = (uint8_t)(g_demo_instances[0].yaw + 2u);
     GameContext *ctx = game_state_data();
     g_demo_instances[1].pos_x = ctx->wireframe.camera.position.x;
@@ -331,9 +334,9 @@ static void demo4_cycle(void) {
 
 static void demo4_exit(void) {
     bitmapSetVisible(0, false);    
-    vgk_hidden_line_disable();    
-    vgk_model_slot_init(&g_model_anaconda, 1);
-    vgk_near_far_coloring_enable(true);
+    vgk_hidden_line(false);    
+    vgk_model_save(&g_model_anaconda, 1);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
     // restore background color
     POKE(0xD00D, 0x33);
     POKE(0xD00E, 0x33);
@@ -380,9 +383,9 @@ static void demo5_enter(void) {
     ctx->wireframe.camera.pitch = 0;
     ctx->wireframe.camera.roll  = 0;
     ctx->wireframe.camera.moved = true;
-    vgk_hidden_line_enable();
-    vgk_near_far_coloring_enable(true);
-    vgk_model_slot_init(&g_model_cube, 0);    
+    vgk_hidden_line(true);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
+    vgk_model_save(&g_model_cube, 0);    
 }
 
 static uint8_t demo5_orbit_angle;
@@ -474,15 +477,15 @@ static const SceneObjectParams demo6_init[] = {
       .pos_x=0, .pos_y=BOING_START_Y, .pos_z=BOING_Z }
 };
 
-static const Model3D * const demo6_models[] = {
+static const Object3D * const demo6_models[] = {
     &g_model_truncated_icosahedron
 };
 
 static void demo6_enter(void) {
     reset_camera();
-    vgk_model_slot_init(&g_model_truncated_icosahedron, 2);
-    vgk_hidden_line_enable();
-    vgk_near_far_coloring_enable(true);
+    vgk_model_save(&g_model_truncated_icosahedron, 2);
+    vgk_hidden_line(true);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
     g_boing_pos_x   =  0;
     g_boing_pos_y   =  BOING_START_Y;
     g_boing_vel_x   =  BOING_VX_INIT;
@@ -494,8 +497,8 @@ static void demo6_enter(void) {
 static void demo6_exit(void) {
     vgm_close();            /* silence any in-progress kick FX before leaving */
     start_vgm_playback();  /* restart background music VGM from the beginning */
-    vgk_hidden_line_disable();
-    vgk_near_far_coloring_enable(true);
+    vgk_hidden_line(false);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
 }
 
 static void demo6_static(void) {
@@ -590,7 +593,7 @@ typedef struct {
     int16_t pos_x;
     int16_t pos_y;
     int16_t pos_z;
-    Model3D model;
+    Object3D model;
 } Demo7AnacondaState;
 
 typedef struct {
@@ -649,7 +652,6 @@ static void demo7_reset_runtime(void) {
         ship->orbit_angle = (uint8_t)(i * 64u);
         ship->frames_remaining = 0u;
         ship->model = g_model_anaconda;
-        ship->model.object_color = g_model_anaconda.object_color;
         demo7_orbit_position_update(ship);
     }
 
@@ -823,6 +825,7 @@ static void demo7_check_hits(void) {
         ship->hit_active = true;
         ship->frames_remaining = DEMO7_HIT_DURATION_FRAMES;
         ship->model.object_color = demo7_hit_colors[0];
+        vgk_model_save(&ship->model, ship->slot);
         return;
     }
 }
@@ -839,13 +842,13 @@ static void demo7_update_hits(void) {
         if (ship->frames_remaining == 0u) {
             ship->hit_active = false;
             ship->active = false;
-            ship->model.object_color = g_model_anaconda.object_color;
             continue;
         }
 
         color_idx = (uint8_t)((DEMO7_HIT_DURATION_FRAMES - ship->frames_remaining) %
                               (sizeof(demo7_hit_colors) / sizeof(demo7_hit_colors[0])));
         ship->model.object_color = demo7_hit_colors[color_idx];
+        vgk_model_save(&ship->model, ship->slot);
         --ship->frames_remaining;
     }
 
@@ -883,19 +886,19 @@ static void demo7_tick(void) {
 
 static void demo7_enter(void) {
     reset_camera();
-    vgk_hidden_line_enable();
-    vgk_near_far_coloring_enable(true);
+    vgk_hidden_line(true);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
     demo7_reset_runtime();
 
     for (uint8_t i = 0; i < DEMO7_ANACONDA_COUNT; ++i) {
-        vgk_model_slot_init(&g_demo7_anacondas[i].model, g_demo7_anacondas[i].slot);
+        vgk_model_save(&g_demo7_anacondas[i].model, g_demo7_anacondas[i].slot);
     }
-    vgk_model_slot_init(&g_model_projectile, DEMO7_PROJECTILE_SLOT);
-    vgk_model_slot_init(&g_model_starfield, DEMO7_STARFIELD_SLOT);
+    vgk_model_save(&g_model_projectile, DEMO7_PROJECTILE_SLOT);
+    vgk_model_save(&g_model_starfield, DEMO7_STARFIELD_SLOT);
     /* Pre-load the projectile slot so the DSP geometry plugin performs its
      * first-time slot initialisation now (while camera is at default), not
      * on the fire frame when the camera may have moved. */
-    vgk_model_load(DEMO7_PROJECTILE_SLOT);
+    vgk_model_select(DEMO7_PROJECTILE_SLOT);
 
     POKE(0xD00D, 0x00);
     POKE(0xD00E, 0x00);
@@ -907,8 +910,8 @@ static void demo7_enter(void) {
 static void demo7_exit(void) {
     g_demo7_projectile.active = false;
     bitmapSetVisible(0, false);
-    vgk_hidden_line_disable();
-    vgk_near_far_coloring_enable(true);
+    vgk_hidden_line(false);
+    vgk_edge_coloring(VGK_EC_NEAR_FAR);
     POKE(0xD00D, 0x33);
     POKE(0xD00E, 0x33);
     POKE(0xD00F, 0x33);

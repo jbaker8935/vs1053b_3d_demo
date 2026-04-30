@@ -10,43 +10,10 @@
 /* Once the plugin load is executed the memory is available for other use */
 /* Users may modify the address as needed by their application */
 /* The address *must* be a numeric value.  You cannot use a define or a variable */
+
 EMBED(plugin_data,"assets/plugin.bin",0x3F000lu);
-#define PLUGIN_SIZE_BYTES (17102lu)  // actual binary size (old 16434)
+#define PLUGIN_SIZE_BYTES (17102lu) 
 
-
-const int16_t sin_table[256] = {
-    0,      402,    804,    1205,   1606,   2006,   2404,   2801,   3196,   3590,   3981,   4370,   4756,   5139,
-    5520,   5897,   6270,   6639,   7005,   7366,   7723,   8076,   8423,   8765,   9102,   9434,   9760,   10080,
-    10394,  10702,  11003,  11297,  11585,  11866,  12140,  12406,  12665,  12916,  13160,  13395,  13623,  13842,
-    14053,  14256,  14449,  14635,  14811,  14978,  15137,  15286,  15426,  15557,  15679,  15791,  15893,  15986,
-    16069,  16143,  16207,  16261,  16305,  16340,  16364,  16379,  16384,  16379,  16364,  16340,  16305,  16261,
-    16207,  16143,  16069,  15986,  15893,  15791,  15679,  15557,  15426,  15286,  15137,  14978,  14811,  14635,
-    14449,  14256,  14053,  13842,  13623,  13395,  13160,  12916,  12665,  12406,  12140,  11866,  11585,  11297,
-    11003,  10702,  10394,  10080,  9760,   9434,   9102,   8765,   8423,   8076,   7723,   7366,   7005,   6639,
-    6270,   5897,   5520,   5139,   4756,   4370,   3981,   3590,   3196,   2801,   2404,   2006,   1606,   1205,
-    804,    402,    0,      -402,   -804,   -1205,  -1606,  -2006,  -2404,  -2801,  -3196,  -3590,  -3981,  -4370,
-    -4756,  -5139,  -5520,  -5897,  -6270,  -6639,  -7005,  -7366,  -7723,  -8076,  -8423,  -8765,  -9102,  -9434,
-    -9760,  -10080, -10394, -10702, -11003, -11297, -11585, -11866, -12140, -12406, -12665, -12916, -13160, -13395,
-    -13623, -13842, -14053, -14256, -14449, -14635, -14811, -14978, -15137, -15286, -15426, -15557, -15679, -15791,
-    -15893, -15986, -16069, -16143, -16207, -16261, -16305, -16340, -16364, -16379, -16384, -16379, -16364, -16340,
-    -16305, -16261, -16207, -16143, -16069, -15986, -15893, -15791, -15679, -15557, -15426, -15286, -15137, -14978,
-    -14811, -14635, -14449, -14256, -14053, -13842, -13623, -13395, -13160, -12916, -12665, -12406, -12140, -11866,
-    -11585, -11297, -11003, -10702, -10394, -10080, -9760,  -9434,  -9102,  -8765,  -8423,  -8076,  -7723,  -7366,
-    -7005,  -6639,  -6270,  -5897,  -5520,  -5139,  -4756,  -4370,  -3981,  -3590,  -3196,  -2801,  -2404,  -2006,
-    -1606,  -1205,  -804,   -402,
-    
-};
-
-Model3D * slot_model[VGK_SAVE_SLOT_COUNT] = {NULL};
-static bool vgk_near_far_coloring = false;
-static bool vgk_scene_mode_active = false;
-
-void vgk_slot_model_set(const Model3D *model, uint8_t slot) {
-    if(slot >= VGK_SAVE_SLOT_COUNT) {
-        return;  // Invalid slot; do nothing
-    }
-    slot_model[slot] = (Model3D *)model;
-}
 __attribute__((noinline))
 void vgk_plugin_init(void) {
     // Geometry mode reuses decoder RAM, so quiet DAC and disable DAC interrupts.
@@ -62,6 +29,18 @@ void vgk_plugin_init(void) {
 
 }
 
+static edge_coloring_t vgk_edge_coloring_mode = false;
+
+// Structure to hold a reference to edge colors for an object loaded into a slot.
+Object3D * slot_object[VGK_SAVE_SLOT_COUNT] = {NULL};
+
+void vgk_slot_object(const Object3D* obj, uint8_t slot) {
+    if(slot >= VGK_SAVE_SLOT_COUNT) {
+        return;  // Invalid slot; do nothing
+    }
+    slot_object[slot] = (Object3D *)obj;
+}
+
 
 uint16_t vgk_plugin_version(void) {
     if(vs1053_mem_read(VGK_PLUGIN_SIGNATURE) != VGK_PLUGIN_SIGNATURE_VALUE) {
@@ -71,7 +50,7 @@ uint16_t vgk_plugin_version(void) {
 }
 
 // Setup object transformation parameters
-void vgk_obj_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale, int16_t pos_x, int16_t pos_y,
+void vgk_obj_params(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale, int16_t pos_x, int16_t pos_y,
                          int16_t pos_z) {
     vs1053_mem_write(VGK_OBJ_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  // sets WRAMADDR, auto increments
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) | scale);
@@ -81,20 +60,20 @@ void vgk_obj_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale,
 }
 
 // Setup object euler angle and scale parameters only
-void vgk_obj_euler_scale_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale) {
+void vgk_obj_angle_scale(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale) {
     vs1053_mem_write(VGK_OBJ_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) | scale);
 }
 
 // Setup object position only parameters
-void vgk_obj_pos_set(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
+void vgk_obj_pos(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_OBJ_POS_X, pos_x);
     vs1053_sci_write(SCI_WRAM, pos_y);
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
 
 // Setup camera transformation parameters
-void vgk_cam_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll, int16_t pos_x, int16_t pos_y, int16_t pos_z) {
+void vgk_cam_params(uint8_t pitch, uint8_t yaw, uint8_t roll, int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_CAM_PITCH_YAW, (uint16_t)pitch << 8 | yaw);
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) |
                                    0x80);  // scale not used for camera
@@ -104,20 +83,20 @@ void vgk_cam_params_set(uint8_t pitch, uint8_t yaw, uint8_t roll, int16_t pos_x,
 }
 
 // Setup camera euler angles (no scale) parameters only
-void vgk_cam_euler_set(uint8_t pitch, uint8_t yaw, uint8_t roll, uint8_t scale) {
+void vgk_cam_angle(uint8_t pitch, uint8_t yaw, uint8_t roll) {
     vs1053_mem_write(VGK_CAM_PITCH_YAW, (uint16_t)pitch << 8 | yaw);  
     vs1053_sci_write(SCI_WRAM, ((uint16_t)roll << 8) | 0x80); 
 }
 
 // Setup camera position only parameters
-void vgk_cam_pos_set(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
+void vgk_cam_pos(int16_t pos_x, int16_t pos_y, int16_t pos_z) {
     vs1053_mem_write(VGK_CAM_POS_X, pos_x);
     vs1053_sci_write(SCI_WRAM, pos_y);
     vs1053_sci_write(SCI_WRAM, pos_z);
 }
 
 // Setup camera transformation parameters
-void vgk_projection_params_init(int16_t focal, int16_t half_w, int16_t half_h, int16_t near_z) {
+void vgk_projection_params(int16_t focal, int16_t half_w, int16_t half_h, int16_t near_z) {
     vs1053_mem_write(VGK_PROJ_FOCAL, focal);
     vs1053_sci_write(SCI_WRAM, half_w);
     vs1053_sci_write(SCI_WRAM, half_h);
@@ -125,7 +104,7 @@ void vgk_projection_params_init(int16_t focal, int16_t half_w, int16_t half_h, i
 }
 
 
-void vgk_model_vertices_init(const Model3D *model, uint8_t slot) {
+void vgk_model_vertices(const Geom3D *model, uint8_t slot) {
     if (slot >= VGK_SAVE_SLOT_COUNT) return;
     uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
     vs1053_mem_write(base + VGK_SLOT_N_VERTICES, model->vertex_count);
@@ -137,31 +116,25 @@ void vgk_model_vertices_init(const Model3D *model, uint8_t slot) {
     }
 }
 
-static void vgk_descriptor_enable(bool enabled) {
+static void vgk_edge_descriptor(bool enabled) {
     vs1053_mem_write(VGK_ENABLE_DESCRIPTOR, enabled ? 0x0001 : 0x0000);
 }
 
-void vgk_near_far_coloring_enable(bool enabled) {
-    vgk_near_far_coloring = enabled;
-    if (enabled) {
-        vgk_descriptor_enable(true);
+void vgk_edge_coloring(edge_coloring_t mode) {
+    vgk_edge_coloring_mode = mode;
+    // enable discriptor for any coloring mode
+    if (mode == VGK_EC_DEFAULT) {
+        vgk_edge_descriptor(false);
     } else {
-        // don't disable descriptor if scene mode is active.
-//        if (!vgk_scene_mode_active) {
-            vgk_descriptor_enable(false);
-//        }
+        vgk_edge_descriptor(true);
     }
 }
 
-void vgk_hidden_line_disable(void) {
-    vs1053_mem_write(VGK_ENABLE_HIDDEN_LINE, 0x0000);
+void vgk_hidden_line(bool enabled) {
+    vs1053_mem_write(VGK_ENABLE_HIDDEN_LINE, enabled ? 0x0001 : 0x0000);
 }
 
-void vgk_hidden_line_enable(void) {
-    vs1053_mem_write(VGK_ENABLE_HIDDEN_LINE, 0x0001);
-}
-
-void vgk_model_hidden_line_init(const Model3D *model, uint8_t slot) {
+void vgk_model_hidden_line(const Geom3D *model, uint8_t slot) {
     if (slot >= VGK_SAVE_SLOT_COUNT) return;
     uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
     
@@ -205,16 +178,16 @@ void vgk_model_hidden_line_init(const Model3D *model, uint8_t slot) {
     vs1053_mem_write(base + VGK_SLOT_N_FACES, face_count);   
 }
 
-void vgk_model_slot_init(const Model3D *model, uint8_t slot) {
+void vgk_model_save(const Object3D *obj, uint8_t slot) {
     // Write geometry directly to the save slot
     // The plugin may consume the selected slot directly via active-base words.
-    vgk_slot_model_set(model, slot);  
-    vgk_model_vertices_init(model, slot);
-    vgk_model_edges_init(model, slot);
-    vgk_model_hidden_line_init(model, slot);
+    vgk_slot_object(obj, slot);  
+    vgk_model_vertices(obj->geometry, slot);
+    vgk_model_edges(obj->geometry, slot);
+    vgk_model_hidden_line(obj->geometry, slot);
 }
 
-void vgk_model_edges_init(const Model3D *model, uint8_t slot) {
+void vgk_model_edges(const Geom3D *model, uint8_t slot) {
     if (slot >= VGK_SAVE_SLOT_COUNT) return;
     uint16_t base = VGK_SAVE_AREA + (uint16_t)slot * VGK_SAVE_SLOT_SIZE;
     vs1053_mem_write(base + VGK_SLOT_N_EDGES, model->edge_count);
@@ -227,7 +200,7 @@ void vgk_model_edges_init(const Model3D *model, uint8_t slot) {
 /* Yield callback called on each wait-loop iteration.  NULL = nop-delay only. */
 static void (*g_yield_cb)(void) = NULL;
 
-void vgk_yield_cb_set(void (*cb)(void)) {
+void vgk_yield_cb(void (*cb)(void)) {
     g_yield_cb = cb;
 }
 
@@ -246,8 +219,12 @@ void vgk_trigger(void) {
 }
 
 // load Object from internal slot
+// Sets the current object for transformation and rendering parameters, but does not trigger processing.
+// Must be called before triggering kernel for the object.
+// Note that the model does not need to be re-loaded if only tranformation parameters are changing
+// between kernel calls
 __attribute__((noinline))
-bool vgk_model_load(uint16_t slot) {
+bool vgk_model_select(uint16_t slot) {
     vgk_reset();
     vs1053_sci_write(SCI_AICTRL2, slot);            // Set trigger to start processing
     if (vgk_wait_complete(1000) == 1) {  // wait for completion (or error)
@@ -352,12 +329,12 @@ void vgk_line_draw(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint8_t color
     POKE(DL_MODE, 0x00);
 }
 
-/* vgk_scrn_edges_get: Uses new stream edge reads
+/* vgk_scrn_edges_render: Uses new stream edge reads
  * 
  */
-uint16_t max_edges=0;
+
 __attribute__((noinline))
-uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
+uint8_t vgk_scrn_edges_render(uint8_t layer, uint8_t default_color) {
 
     bool has_descriptors = (vs1053_mem_read(VGK_ENABLE_DESCRIPTOR) != 0);
     
@@ -365,16 +342,6 @@ uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
     POKE(DL_MODE, 0x01); 
     // Read number of output edges
     uint16_t edge_count = vs1053_mem_read(VGK_N_STREAM_EDGES);
-    // if(edge_count > max_edges) {
-    //     max_edges = edge_count;
-    // }
-    // textGotoXY(0, 6);
-    // textPrint("Edges:             ");
-    // textGotoXY(7, 6);
-    // textPrintUInt(edge_count);
-    // textPrint(" / ");
-    // textPrintUInt(max_edges);
-    // textPrint("\n");
     for (uint16_t e = 0; e < edge_count; ++e) {
         POKE(DL_CONTROL, (layer << 2) | 0x01); // enable + no clock        
         // apply coloring if descriptors enabled
@@ -382,13 +349,13 @@ uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
             uint16_t desc = vs1053_sci_read(SCI_WRAM); //(bit15=near, bits8-14=slot, bits0-7=edge_idx)
             uint8_t slot = (uint8_t)((desc >> VGK_EDESC_SLOT_SHIFT) & VGK_EDESC_SLOT_MASK);
             uint8_t edge_idx = (uint8_t)(desc & VGK_EDESC_IDX_MASK);
-            if (slot < VGK_SAVE_SLOT_COUNT && slot_model[slot] != NULL) {
-                const Model3D *model = slot_model[slot];
-                if (model->edge_color_count > edge_idx) {
-                    uint16_t edge_color = model->edge_color[edge_idx];
+            if (slot < VGK_SAVE_SLOT_COUNT && slot_object[slot] != NULL) {
+                const Object3D* obj = slot_object[slot];
+                if (vgk_edge_coloring_mode == VGK_EC_EDGE_COLORING && obj->edge_color_count > edge_idx) {
+                    uint16_t edge_color = obj->edge_color[edge_idx];
                     POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? edge_color & 0xFF : edge_color >> 8); // near = low byte, far = high byte
-                } else if (vgk_near_far_coloring) {
-                    uint16_t object_color = model->object_color;
+                } else if (vgk_edge_coloring_mode == VGK_EC_NEAR_FAR) {
+                    uint16_t object_color = obj->object_color;
                     POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? object_color & 0xFF : object_color >> 8); // near = low byte, far = high byte
                 }
             }
@@ -420,37 +387,33 @@ uint8_t vgk_scrn_edges_get(uint8_t layer, uint8_t default_color) {
 // loop can iterate over multiple saved objects in a single trigger.  The host
 // writes the descriptor, triggers the kernel, then reads combined results.
 //
-// Work in progress.  Not optimized.
 
-void vgk_scene_enable(bool enabled) {
-    vgk_scene_mode_active = enabled;
-    vs1053_mem_write(VGK_SCENE_ENABLE, enabled ? 0x0001 : 0x0000);
-    // if (enabled) {
-    //     vgk_descriptor_enable(true);
-    // } else {
-    //     // don't disable descriptor if near_far_coloring mode is active.
-    //     if (!vgk_near_far_coloring) {
-    //         vgk_descriptor_enable(false);
-    //     }
-    // }    
+
+void vgk_scene_mode(bool enabled) {
+    vs1053_mem_write(VGK_SCENE_ENABLE, enabled ? 0x0001 : 0x0000); 
+    // default occlusion on when scene mode enabled
+    if (enabled) {
+        vgk_scene_occlusion(true);
+    } else {
+        vgk_scene_occlusion(false);
+    }
 }
 
-void vgk_scene_no_occlusion_enable(void) {
-    vs1053_mem_write(VGK_SCENE_FLAGS, VGK_SCENE_FLAG_NO_OCCLUSION|VGK_SCENE_FLAG_NO_SORT);
+void vgk_scene_occlusion(bool enabled) {
+    vs1053_mem_write(VGK_SCENE_FLAGS, enabled ? 0x0000 : VGK_SCENE_FLAG_NO_OCCLUSION|VGK_SCENE_FLAG_NO_SORT);
 }
 
-void vgk_scene_no_occlusion_disable(void) {
-    vs1053_mem_write(VGK_SCENE_FLAGS, 0x0000);
-}
-
-void vgk_scene_set_object_count(uint8_t n_objects) {
+void vgk_scene_objects(uint8_t n_objects, const SceneObjectParams *objects) {
     if (n_objects > VGK_SCENE_MAX_OBJECTS) {
         n_objects = VGK_SCENE_MAX_OBJECTS;
     }
     vs1053_mem_write(VGK_SCENE_N_OBJECTS, (uint16_t)n_objects);
+    for (uint8_t i = 0; i < n_objects; ++i) {
+        vgk_scene_object_params(i, &objects[i]);
+    }
 }
 
-void vgk_scene_set_object(uint8_t index, const SceneObjectParams *obj) {
+void vgk_scene_object_params(uint8_t index, const SceneObjectParams *obj) {
     if (index >= VGK_SCENE_MAX_OBJECTS) {
         return;
     }
@@ -466,15 +429,6 @@ void vgk_scene_set_object(uint8_t index, const SceneObjectParams *obj) {
     vs1053_sci_write(SCI_WRAM, (uint16_t)obj->pos_z);
 }
 
-void vgk_scene_set_descriptor(uint8_t n_objects, const SceneObjectParams *objects) {
-    if (n_objects > VGK_SCENE_MAX_OBJECTS) {
-        n_objects = VGK_SCENE_MAX_OBJECTS;
-    }
-    vgk_scene_set_object_count(n_objects);
-    for (uint8_t i = 0; i < n_objects; ++i) {
-        vgk_scene_set_object(i, &objects[i]);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Scene results readback
@@ -506,47 +460,29 @@ void vgk_scene_object_meta_get(uint8_t index, SceneObjectMeta *meta) {
     meta->aabb_max_y  = (int16_t)vs1053_mem_read(aabb_addr + 3);
 }
 
-uint16_t vgk_scene_obj_edge_offset_get(uint8_t index) {
-    if (index >= VGK_SCENE_MAX_OBJECTS) {
-        return 0;
-    }
-    return vs1053_mem_read(VGK_SCENE_EDGE_OFFSET + index);
-}
-
-uint16_t vgk_scene_obj_edge_count_get(uint8_t index) {
-    if (index >= VGK_SCENE_MAX_OBJECTS) {
-        return 0;
-    }
-    return vs1053_mem_read(VGK_SCENE_EDGE_COUNT + index);
-}
-
-
-uint8_t vgk_scene_scrn_edges_get(uint8_t n_objects,
+uint8_t vgk_scene_render(uint8_t n_objects,
                                 const SceneObjectParams *objects,
-                                uint8_t near_color, uint8_t far_color,
+                                uint8_t default_color,
                                 uint8_t draw_layer) {
 
-    (void)far_color;
-
-    // incomplete implementation. one color
 
     uint16_t edges_written = 0;
     // Write the scene descriptor and trigger the kernel in scene mode.
-    vgk_scene_enable(true);
+    vgk_scene_mode(true);
     if (objects != NULL) {
-        vgk_scene_set_descriptor(n_objects, objects);
+        vgk_scene_objects(n_objects, objects);
     }
     vgk_trigger();
 
     if (vgk_wait_complete(10000) != 1) {
-        vgk_scene_enable(false);
+        vgk_scene_mode(false);
         textPrint("Error: Geometry kernel timeout or error.\n");
         return 0;  // timeout or error
     }
 
-    edges_written = vgk_scrn_edges_get(draw_layer, near_color);
+    edges_written = vgk_scrn_edges_render(draw_layer, default_color);
 
-    vgk_scene_enable(false);
+    vgk_scene_mode(false);
     return edges_written;
 }
 

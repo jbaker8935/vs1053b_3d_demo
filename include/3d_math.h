@@ -13,4 +13,6 @@ typedef struct {
     int16_t x, y;
 } vec2_t;
 
+extern const int16_t sin_table[256];
+
 #endif // MATH_3D_H
