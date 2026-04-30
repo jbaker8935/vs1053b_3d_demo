@@ -16,6 +16,7 @@ static int16_t s_vel_y[SWARM_COUNT];
 static int16_t s_vel_z[SWARM_COUNT];
 static bool    s_swarm_init = false;
 
+__attribute__((noinline))
 void object_swarm_update(SceneObjectParams *objs, uint8_t count, uint16_t frame) {
     (void)frame;
 
@@ -116,6 +117,7 @@ void app_init(void) {
     vgk_hidden_line(true);
 }
 
+__attribute__((noinline))
 void app_frame() {
     uint8_t draw_layer = (visible_layer == 1) ? 2 : 1;
     dmaBitmapClear(draw_layer);

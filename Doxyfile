@@ -1,0 +1,82 @@
+# Doxyfile — VS1053b Geometry Kernel
+# Run: doxygen Doxyfile  (from repo root)
+# Output: docs/doxygen/html/index.html
+
+#---------------------------------------------------------------------------
+# Project
+#---------------------------------------------------------------------------
+PROJECT_NAME           = "VS1053b Geometry Kernel"
+PROJECT_BRIEF          = "DSP geometry coprocessor host API for the Wildbits K2 and Jr2"
+PROJECT_NUMBER         = "v1.0"
+OUTPUT_DIRECTORY       = docs/doxygen
+
+#---------------------------------------------------------------------------
+# Input
+#---------------------------------------------------------------------------
+INPUT                  = include/3d_math.h \
+                         include/3d_object.h \
+                         include/geometry_kernel.h
+
+# All public API documentation lives in the headers.
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = __attribute__(x)=
+
+RECURSIVE              = NO
+FILE_PATTERNS          = *.h *.c
+
+#---------------------------------------------------------------------------
+# Extraction
+#---------------------------------------------------------------------------
+EXTRACT_ALL            = NO
+EXTRACT_STATIC         = YES
+EXTRACT_ANON_NSPACES   = NO
+HIDE_UNDOC_MEMBERS     = YES
+HIDE_UNDOC_CLASSES     = YES
+
+#---------------------------------------------------------------------------
+# C/embedded tuning
+#---------------------------------------------------------------------------
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+SORT_MEMBER_DOCS       = NO
+SORT_BRIEF_DOCS        = NO
+SHOW_INCLUDE_FILES     = NO
+
+#---------------------------------------------------------------------------
+# Path display
+#---------------------------------------------------------------------------
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = /home/john/code/vs1053b_3d_demo/
+
+#---------------------------------------------------------------------------
+# HTML output
+#---------------------------------------------------------------------------
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_TREEVIEW      = YES
+TREEVIEW_WIDTH         = 250
+DISABLE_INDEX          = NO
+
+#---------------------------------------------------------------------------
+# Disable unused generators
+#---------------------------------------------------------------------------
+GENERATE_LATEX         = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+GENERATE_RTF           = NO
+
+#---------------------------------------------------------------------------
+# Dot / graphs
+#---------------------------------------------------------------------------
+HAVE_DOT               = NO
+
+#---------------------------------------------------------------------------
+# Warnings
+#---------------------------------------------------------------------------
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_FORMAT            = "$file:$line: $text"

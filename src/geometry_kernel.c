@@ -406,8 +406,6 @@ uint8_t vgk_scrn_edges_render(uint8_t layer, uint8_t default_color) {
     return edge_count;
 }
 
-#if 1  // enabled
-
 // =============================================================================
 // Scene API implementation
 // =============================================================================
@@ -516,4 +514,3 @@ uint8_t vgk_scene_render(uint8_t n_objects,
     return edges_written;
 }
 
-#endif

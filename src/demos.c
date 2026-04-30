@@ -485,7 +485,7 @@ static void demo6_enter(void) {
     reset_camera();
     vgk_model_save(&g_model_truncated_icosahedron, 2);
     vgk_hidden_line(true);
-    vgk_edge_coloring(VGK_EC_NEAR_FAR);
+    vgk_edge_coloring(VGK_EC_EDGE_COLORING);
     g_boing_pos_x   =  0;
     g_boing_pos_y   =  BOING_START_Y;
     g_boing_vel_x   =  BOING_VX_INIT;
