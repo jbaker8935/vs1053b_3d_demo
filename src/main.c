@@ -100,8 +100,8 @@ static void process_vgm_tick(void) {
 }
 
 static void init_models(void) {
-    vgk_model_slot_init(&g_model_cube, 0);
-    vgk_model_slot_init(&g_model_anaconda, 1);
+    vgk_model_save(&g_model_cube, 0);
+    vgk_model_save(&g_model_anaconda, 1);
 }
 
 int main(int argc, char *argv[]) {
@@ -110,17 +110,23 @@ int main(int argc, char *argv[]) {
                  ? argv[1] : NULL;
 
     f256Init();
-    vs1053_clock_boost();
-    vs1053_plugin_load();
+    textGotoXY(0, 0);
+    textPrint("Initializing...\n");
     vgk_plugin_init();
-    vs1053_dac_mute();
-    vs1053_dac_interrupt_disable(); // Decoder RAM is being used.
     game_state_init(STATE_DEMO);
     input_handler_init();
     video_init();
 
+    {
+        uint16_t version = vgk_plugin_version();
+        if (version == 0) {
+            textPrint("Geometry plugin not detected.\n");
+            return 1;
+        }
+    }
+
     // 4:3 aspect 320x240 with vertical fov 90 degrees
-    vgk_projection_params_init(240, 160, 120, -128);
+    vgk_projection_params(240, 160, 120, -128);
 
     init_models();
     codec_init();
@@ -148,7 +154,7 @@ int main(int argc, char *argv[]) {
       start_vgm_playback();
     }
 
-    vgk_yield_cb_set(process_vgm_tick);  /* service audio during DSP waits */
+    vgk_yield_cb(process_vgm_tick);  /* service audio during DSP waits */
 
     demos_register();
     demo_engine_start(0);
@@ -160,7 +166,7 @@ int main(int argc, char *argv[]) {
         if (input->edge.exit) {
             break;
         }    
-        
+
         if (input->edge.resetCam) {
             reset_camera();
         }

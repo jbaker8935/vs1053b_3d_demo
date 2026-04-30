@@ -26,8 +26,8 @@ void codec_init(void) {
     codec_write(CODEC_ADC_MUX, CODEC_AIN2);
     /* Stereo output */
     codec_write(CODEC_DAC_CHL_CTL, CODEC_DAC_CHL_CTL_STEREO);
-    /* Attenuate DAC by 9 dB for headroom */
-    codec_write(CODEC_DAC_ATTN_MSTR, CODEC_DAC_ATTN_9DB);
-    /* Attenuate headphone output by 9 dB */
-    codec_write(CODEC_HPO_ATTN_MSTR, CODEC_HPO_ATTN_9DB);
+    /* Attenuate DAC by 6 dB for headroom */
+    codec_write(CODEC_DAC_ATTN_MSTR, CODEC_DAC_ATTN_6DB);
+    /* Attenuate headphone output by 6 dB */
+    codec_write(CODEC_HPO_ATTN_MSTR, CODEC_HPO_ATTN_6DB);
 }

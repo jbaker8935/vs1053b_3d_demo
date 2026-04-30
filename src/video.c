@@ -35,7 +35,10 @@ void video_init(void) {
     textDefineBackgroundColor(1, 40,40,40); 
 	textEnableBackgroundColors(true);   
 	textSetColor(1, 1);
-
+	video_wait_vblank();
+	dmaBitmapClear(1);
+	video_wait_vblank();	
+	dmaBitmapClear(2);
 	// Initialize Layer 0 with cockpit overlay
 	graphicsSetLayerBitmap(0, 0);
 	bitmapSetActive(0);

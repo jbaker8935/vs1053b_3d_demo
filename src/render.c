@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "../include/3d_object.h"
-#include "../include/3d_pipeline.h"
 #include "../include/draw_line.h"
 #include "../include/geometry_kernel.h"
 #include "../include/video.h"
@@ -46,16 +45,12 @@ void render_scene_aabb_overlay(uint8_t draw_layer) {
         min_y = (uint8_t)meta.aabb_min_y;
         max_y = (uint8_t)meta.aabb_max_y;
 
-        add_line_to_list(min_x, min_y, max_x, min_y, 15);
-        add_line_to_list(max_x, min_y, max_x, max_y, 15);
-        add_line_to_list(max_x, max_y, min_x, max_y, 15);
-        add_line_to_list(min_x, max_y, min_x, min_y, 15);
+        vgk_line_draw(min_x, min_y, max_x, min_y, 15, draw_layer);
+        vgk_line_draw(max_x, min_y, max_x, max_y, 15, draw_layer);
+        vgk_line_draw(max_x, max_y, min_x, max_y, 15, draw_layer);
+        vgk_line_draw(min_x, max_y, min_x, min_y, 15, draw_layer);
     }
 
-    if (g_line_count != 0) {
-        draw_lines_asm(draw_layer);
-        reset_line_list();
-    }
 }
 
 __attribute__((noinline)) void render_frame(GameContext *ctx) {
@@ -65,7 +60,7 @@ __attribute__((noinline)) void render_frame(GameContext *ctx) {
 
     Camera *camera = &ctx->wireframe.camera;
     if (camera->moved) {
-        vgk_cam_params_set(camera->pitch, camera->yaw, camera->roll,
+        vgk_cam_params(camera->pitch, camera->yaw, camera->roll,
                             camera->position.x, camera->position.y,
                             camera->position.z);
         camera->moved = false;

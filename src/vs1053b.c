@@ -2,10 +2,8 @@
 #include <stdint.h>
 #include "../include/vs1053b.h"
 
-EMBED(plugin_data,"assets/plugin.bin",0x10000lu);
-
-uint16_t vs1053_sci_read(uint8_t addr) {
-    POKE(VS_SCI_ADDR, addr);
+uint16_t vs1053_sci_read(uint8_t sci_reg) {
+    POKE(VS_SCI_ADDR, sci_reg);
     POKE(VS_SCI_CTRL, CTRL_Start | CTRL_RWn);  /* Activate xCS and start read */
     POKE(VS_SCI_CTRL, 0);                      /* Deactivate xCS */
 
@@ -16,8 +14,8 @@ uint16_t vs1053_sci_read(uint8_t addr) {
     return ret;
 }
 
-void vs1053_sci_write(uint8_t addr, uint16_t data) {
-    POKE(VS_SCI_ADDR, addr);
+void vs1053_sci_write(uint8_t sci_reg, uint16_t data) {
+    POKE(VS_SCI_ADDR, sci_reg);
     POKEW(VS_SCI_DATA, data);
     POKE(VS_SCI_CTRL, CTRL_Start);  /* start write */
     POKE(VS_SCI_CTRL, 0);           /* deactivate */
@@ -42,71 +40,54 @@ void vs1053_dac_mute(void) {
 }
 __attribute__((noinline))
 void vs1053_dac_interrupt_disable(void) {
-    uint16_t reg = vs1053_mem_read(0xC01A);      /* INT_ENABLE read */
-    reg &= ~(1u << 0);                           /* clear INT_EN_DAC */
-    vs1053_mem_write(0xC01A, reg);
+    uint16_t reg = vs1053_mem_read(INT_ENABLE);      /* INT_ENABLE read */
+    reg &= ~(INT_EN_DAC);                           /* clear INT_EN_DAC */
+    vs1053_mem_write(INT_ENABLE, reg);
 }
 __attribute__((noinline))
 void vs1053_dac_interrupt_enable(void) {
-    uint16_t reg = vs1053_mem_read(0xC01A);
-    reg |= (1u << 0);                            /* set INT_EN_DAC */
-    vs1053_mem_write(0xC01A, reg);
+    uint16_t reg = vs1053_mem_read(INT_ENABLE);
+    reg |= INT_EN_DAC;                            /* set INT_EN_DAC */
+    vs1053_mem_write(INT_ENABLE, reg);
 }
 
 /* -----------------------------------------------------------------------
  * Plugin load/clock helpers
  * ----------------------------------------------------------------------- */
+
 __attribute__((noinline))
- void vs1053_plugin_init(uint16_t size) {
+void vs1053_plugin_load(uint32_t plugin_data_start, uint32_t plugin_data_end) {
+  uint32_t plugin_size_bytes = (uint32_t)(plugin_data_end - plugin_data_start);
   uint16_t n;
-  uint16_t addr, val;
+  uint16_t sci_reg, val;
   uint32_t i = 0;
   /* i is the byte offset into the plugin data; size is in words */
-  while (i < (uint32_t)size * 2u) {
-    addr = FAR_PEEKW(0x10000lu + (uint32_t)i);
-    n = FAR_PEEKW(0x10000lu + (uint32_t)(i + 2u));
+  while (i < plugin_size_bytes) {
+    sci_reg = FAR_PEEKW(plugin_data_start + (uint32_t)i);
+    n = FAR_PEEKW(plugin_data_start + (uint32_t)(i + 2u));
     i += 4u;
 
     if (n & 0x8000U) { /* RLE run, replicate n samples */
       n &= 0x7FFF;
-      val = FAR_PEEKW(0x10000lu + (uint32_t)i);
+      val = FAR_PEEKW(plugin_data_start + (uint32_t)i);
       i += 2u;
       while (n--) {
-        POKEW(VS_SCI_ADDR, addr);
-        POKEW(VS_SCI_DATA, val);
-        POKE(VS_SCI_CTRL, CTRL_Start);
-        POKE(VS_SCI_CTRL, 0);
-        while ((PEEK(VS_SCI_CTRL) & CTRL_Busy) == CTRL_Busy)
-          ;
+        vs1053_sci_write(sci_reg,val);
       }
     } else {
       /* Copy run, copy n samples */
       while (n--) {
-        val = FAR_PEEKW(0x10000lu + (uint32_t)i);
+        val = FAR_PEEKW(plugin_data_start + (uint32_t)i);
         i += 2u;
-        POKEW(VS_SCI_ADDR, addr);
-        POKEW(VS_SCI_DATA, val);
-        POKE(VS_SCI_CTRL, CTRL_Start);
-        POKE(VS_SCI_CTRL, 0);
-        while ((PEEK(VS_SCI_CTRL) & CTRL_Busy) == CTRL_Busy)
-          ;
+        vs1053_sci_write(sci_reg,val);
       }
     }
   }
-}
-__attribute__((noinline))
-void vs1053_plugin_load() {
-  uint32_t plugin_size_bytes = (uint32_t)(plugin_data_end - plugin_data_start);
-  uint16_t plugin_size_words = (uint16_t)(plugin_size_bytes >> 1);
-  vs1053_plugin_init(plugin_size_words);
+
 }
 
-void vs1053_clock_boost() {
+void vs1053_clock_boost(uint16_t mult, uint16_t add) {
   /* Recommended SC_MULT=3.5x/SC_ADD=1.0x (SCI_CLOCKF=0x8800) */
-  POKEW(VS_SCI_ADDR, VS_SCI_ADDR_CLOCKF);
-  POKEW(VS_SCI_DATA, 0xC000);
-  POKE(VS_SCI_CTRL, CTRL_Start);
-  POKE(VS_SCI_CTRL, 0);
-  while (PEEK(VS_SCI_CTRL) & CTRL_Busy)
-    ;
+  /* SC_MULT=4.5x/SC_ADD=0x0 (SCI_CLOCKF=0xC000) */
+  vs1053_sci_write(VS_SCI_ADDR_CLOCKF, mult | add);
 }

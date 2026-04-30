@@ -1,4 +1,5 @@
 #include "f256lib.h"
+#include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -19,7 +20,7 @@ uint8_t g_instance_pitch_rate[DEMO_MAX_INSTANCES];
 uint8_t g_instance_roll_rate[DEMO_MAX_INSTANCES];
 int8_t  g_instance_scale_dir[DEMO_MAX_INSTANCES];
 bool    g_demo_aabb_overlay;
-const Model3D *g_demo_models[DEMO_MAX_INSTANCES];
+const Object3D *g_demo_models[DEMO_MAX_INSTANCES];
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -31,6 +32,7 @@ static uint8_t  g_event_idx;
 static uint16_t g_event_frame;
 static uint16_t g_idle_frame;
 static uint8_t  g_anim_tick;
+static bool     g_idle_timeout_pending;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -59,35 +61,14 @@ static void start_event(void) {
     g_event_frame = 0;
     g_anim_tick   = 0;
     g_idle_frame  = 0;
+    g_idle_timeout_pending = false;
     print_centered(3u, e->description);
     if (e->type == DEMO_EVENT_ONESHOT && e->callback) {
         e->callback();
     }
 }
 
-static void start_demo(uint8_t idx) {
-    const Demo *d = g_demos[idx];
-    g_demo_idx            = idx;
-    g_event_idx           = 0;
-    g_idle_frame          = 0;
-    g_demo_aabb_overlay   = false;
-    g_demo_instance_count = d->instance_count;
-    memcpy(g_demo_instances, d->initial_instances,
-           d->instance_count * sizeof(SceneObjectParams));
-    if (d->initial_models) {
-        memcpy(g_demo_models, d->initial_models,
-               d->instance_count * sizeof(const Model3D *));
-    }
-    memset(g_instance_yaw_rate,   0, sizeof(g_instance_yaw_rate));
-    memset(g_instance_pitch_rate, 0, sizeof(g_instance_pitch_rate));
-    memset(g_instance_roll_rate,  0, sizeof(g_instance_roll_rate));
-    memset(g_instance_scale_dir,  0, sizeof(g_instance_scale_dir));
-    display_demo_titles();
-    if (d->on_enter) {
-        d->on_enter();
-    }
-    start_event();
-}
+static void start_demo(uint8_t idx);
 
 static void advance_event(void) {
     const Demo *d = g_demos[g_demo_idx];
@@ -104,6 +85,30 @@ static void advance_event(void) {
     } else {
         start_event();
     }
+}
+
+static void start_demo(uint8_t idx) {
+    const Demo *d = g_demos[idx];
+    g_demo_idx            = idx;
+    g_event_idx           = 0;
+    g_idle_frame          = 0;
+    g_demo_aabb_overlay   = false;
+    g_demo_instance_count = d->instance_count;
+    memcpy(g_demo_instances, d->initial_instances,
+           d->instance_count * sizeof(SceneObjectParams));
+    if (d->initial_models) {
+        memcpy(g_demo_models, d->initial_models,
+               d->instance_count * sizeof(const Object3D *));
+    }
+    memset(g_instance_yaw_rate,   0, sizeof(g_instance_yaw_rate));
+    memset(g_instance_pitch_rate, 0, sizeof(g_instance_pitch_rate));
+    memset(g_instance_roll_rate,  0, sizeof(g_instance_roll_rate));
+    memset(g_instance_scale_dir,  0, sizeof(g_instance_scale_dir));
+    display_demo_titles();
+    if (d->on_enter) {
+        d->on_enter();
+    }
+    start_event();
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +134,11 @@ bool demo_engine_update(InputState *input) {
                        input->hold.rotateUp    || input->hold.rotateDown;
     if (camera_held) {
         game_state_update_3d(input);
+    }
+
+    if (camera_held || input->edge.firePrimary) {
         g_idle_frame = 0;
+        g_idle_timeout_pending = false;
     } else {
         if (g_idle_frame < 0xFFFFu) {
             ++g_idle_frame;
@@ -154,8 +163,13 @@ bool demo_engine_update(InputState *input) {
     uint16_t duration_frames = (uint16_t)e->duration_secs * (uint16_t)T0_TICK_FREQ;
     bool advance = (duration_frames > 0u && g_event_frame >= duration_frames);
     // Idle timeout only applies to open-ended events (duration_secs == 0)
-    if (!advance && e->duration_secs == 0u && g_idle_frame >= DEMO_IDLE_TIMEOUT_FRAMES) {
-        advance = true;
+    if (!advance && !d->disable_idle_timeout &&
+        e->duration_secs == 0u && g_idle_frame >= DEMO_IDLE_TIMEOUT_FRAMES) {
+        if (!g_idle_timeout_pending) {
+            g_idle_timeout_pending = true;
+        } else {
+            advance = true;
+        }
     }
 
     if (advance) {
@@ -168,21 +182,29 @@ bool demo_engine_update(InputState *input) {
 void demo_engine_render(uint8_t draw_layer) {
     const Demo *d = g_demos[g_demo_idx];
     if (d->use_scene_api) {
-        vgk_scene_scrn_edges_get(g_demo_instance_count, g_demo_instances,
-                               d->near_color, d->far_color, draw_layer);
+        vgk_scene_render(g_demo_instance_count, g_demo_instances,
+                               d->near_color, draw_layer);
         if (g_demo_aabb_overlay) {
             render_scene_aabb_overlay(draw_layer);
         }
     } else {
         for (uint8_t i = 0; i < g_demo_instance_count; ++i) {
             const SceneObjectParams *inst = &g_demo_instances[i];
-            vgk_obj_params_set(inst->pitch, inst->yaw, inst->roll, inst->scale,
+            vgk_obj_params(inst->pitch, inst->yaw, inst->roll, inst->scale,
                                 inst->pos_x, inst->pos_y, inst->pos_z);
-            vgk_model_load(inst->slot);
+            if (!vgk_model_select(inst->slot)) {
+                textPrint("Error: Geometry model load failed for slot ");
+                textPrintUInt(inst->slot);
+                textPrint(".\n");
+                return;
+            }
             vgk_reset();
             vgk_trigger();
-            vgk_wait_complete(10000);
-            vgk_scrn_edges_with_depth_get((Model3D *)g_demo_models[i], draw_layer);
+            if (vgk_wait_complete(10000) != 1) {
+                textPrint("Error: Geometry kernel timeout or error.\n");
+                return;
+            }
+            vgk_scrn_edges_render(draw_layer, 0x0B);
             vgk_yield(); /* service audio after per-object SCI readback */
         }
     }

@@ -45,27 +45,11 @@ COMPILE = $(CC) -c $(CFLAGS) -o $@ $<
 
 COMPILE_ASM = $(CC) -c $(ASMFLAGS) -o $@ $<
 
-# Host C compiler for build-time tools (used to compile the offsets generator)
-CC_HOST ?= cc
-
-# Build an offsets generator binary using the host compiler
-tools/gen_offsets: tools/generate_offsets.c | dirs
-	$(CC_HOST) -Iinclude -DGENERATE_OFFSETS $< -o $@
-
-# Target-derived struct offsets (authoritative): compile with llvm-mos and extract `.equ` lines.
-build/struct_offsets_emit.s: tools/struct_offsets_emit.c include/draw_line.h include/3d_object.h include/3d_math.h | dirs
-	$(CC) -S $(CFLAGS) -o $@ $<
-
-# Generated assembler offsets (single shared file)
-build/struct_offsets.inc: build/struct_offsets_emit.s | dirs
-	$(PYTHON) tools/extract_struct_offsets_equ.py $< > $@
 
 # Compile both C and assembly with the same command (mos-f256-clang)
 $(BUILD_DIR)/%.o: src/%.c | dirs
 	$(COMPILE)
 
-$(BUILD_DIR)/%.o: src/%.s build/struct_offsets.inc | dirs
-	$(COMPILE_ASM)
 
 # Compile the bench harness (not in src/) so it can be built independently
 $(BUILD_DIR)/bench_mul.o: tools/bench_mul.c | dirs
@@ -167,7 +151,7 @@ SINGLE_NAME := single_object
 SINGLE_SRC := examples/single_object.c
 SINGLE_OBJ := $(BUILD_DIR)/$(SINGLE_NAME).o
 SINGLE_ASM := $(BUILD_DIR)/$(SINGLE_NAME).s
-SINGLE_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/draw_line.o $(BUILD_DIR)/draw_lines_asm.o $(BUILD_DIR)/emit_edges_asm.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+SINGLE_DEPS := $(BUILD_DIR)/3d_object.o  $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/3d_math.o
 SINGLE_OBJS := $(SINGLE_OBJ) $(SINGLE_DEPS)
 # Separate overlay output dir for single_object (only plugin_data, no other assets)
 SINGLE_OVERLAY_DIR := $(BUILD_DIR)/so
@@ -181,6 +165,8 @@ single_object: $(BUILD_DIR)/$(SINGLE_NAME).pgz
 single_object_overlay: dirs
 	@mkdir -p $(SINGLE_SRC_STAGING)/assets $(SINGLE_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(SINGLE_SRC_STAGING)/
+	@cp $(ROOT)/src/geometry_kernel.c $(SINGLE_SRC_STAGING)/
+	@cp $(ROOT)/src/3d_math.c $(SINGLE_SRC_STAGING)/
 	@cp -a $(ROOT)/src/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(SINGLE_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(SINGLE_OVERLAY_DIR)/assets/ 2>/dev/null || true
@@ -254,7 +240,7 @@ MULTI_NAME := multi_object_scene
 MULTI_SRC := examples/multi_object_scene.c
 MULTI_OBJ := $(BUILD_DIR)/$(MULTI_NAME).o
 MULTI_ASM := $(BUILD_DIR)/$(MULTI_NAME).s
-MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/draw_line.o $(BUILD_DIR)/draw_lines_asm.o $(BUILD_DIR)/emit_edges_asm.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o
+MULTI_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/3d_math.o
 MULTI_OBJS := $(MULTI_OBJ) $(MULTI_DEPS)
 # Separate overlay output dir for multi_object_scene (only plugin_data, no other assets)
 MULTI_OVERLAY_DIR := $(BUILD_DIR)/mo
@@ -268,6 +254,8 @@ $(MULTI_NAME): $(BUILD_DIR)/$(MULTI_NAME).pgz
 multi_object_overlay: dirs
 	@mkdir -p $(MULTI_SRC_STAGING)/assets $(MULTI_OVERLAY_DIR)/assets
 	@cp $(ROOT)/src/vs1053b.c $(MULTI_SRC_STAGING)/
+	@cp $(ROOT)/src/geometry_kernel.c $(MULTI_SRC_STAGING)/
+	@cp $(ROOT)/src/3d_math.c $(MULTI_SRC_STAGING)/
 	@cp -a $(ROOT)/src/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/assets/* $(MULTI_SRC_STAGING)/assets/ 2>/dev/null || true
 	@cp -a $(ROOT)/src/assets/* $(MULTI_OVERLAY_DIR)/assets/ 2>/dev/null || true
@@ -333,9 +321,93 @@ $(BUILD_DIR)/$(MULTI_NAME).pgz: $(BUILD_DIR)/$(MULTI_NAME)
 	@mkdir -p bin
 	@cp $(BUILD_DIR)/$(MULTI_NAME).pgz bin/
 
+# Max object scene demo (mirrors multi_object_scene pattern)
+MAX_NAME := max_object_scene
+MAX_SRC := examples/max_object_scene.c
+MAX_OBJ := $(BUILD_DIR)/$(MAX_NAME).o
+MAX_ASM := $(BUILD_DIR)/$(MAX_NAME).s
+MAX_DEPS := $(BUILD_DIR)/3d_object.o $(BUILD_DIR)/geometry_kernel.o $(BUILD_DIR)/video.o $(BUILD_DIR)/vs1053b.o $(BUILD_DIR)/3d_math.o
+MAX_OBJS := $(MAX_OBJ) $(MAX_DEPS)
+MAX_OVERLAY_DIR := $(BUILD_DIR)/maxo
+MAX_SRC_STAGING := $(BUILD_DIR)/maxo_src
+
+.PHONY: $(MAX_NAME) max_object_overlay
+$(MAX_NAME): $(BUILD_DIR)/$(MAX_NAME).pgz
+	@echo "$(MAX_NAME) build complete: $<"
+
+max_object_overlay: dirs
+	@mkdir -p $(MAX_SRC_STAGING)/assets $(MAX_OVERLAY_DIR)/assets
+	@cp $(ROOT)/src/vs1053b.c $(MAX_SRC_STAGING)/
+	@cp $(ROOT)/src/geometry_kernel.c $(MAX_SRC_STAGING)/
+	@cp $(ROOT)/src/3d_math.c $(MAX_SRC_STAGING)/
+	@cp -a $(ROOT)/src/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(MAX_SRC_STAGING)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/src/assets/* $(MAX_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@cp -a $(ROOT)/assets/* $(MAX_OVERLAY_DIR)/assets/ 2>/dev/null || true
+	@if command -v $(OVERLAY) >/dev/null 2>&1; then \
+		$(OVERLAY) 5 $(MAX_OVERLAY_DIR) $(MAX_SRC_STAGING) || { echo "max_object overlay failed" >&2; exit 1; }; \
+	else \
+		echo "overlay not found; skipping max_object overlay step"; \
+	fi
+
+$(BUILD_DIR)/$(MAX_NAME).o: $(MAX_SRC) | dirs
+	$(CC) -c $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(MAX_NAME).s: $(MAX_SRC) | dirs
+	$(CC) -S $(CFLAGS) -o $@ $<
+
+$(BUILD_DIR)/$(MAX_NAME): max_object_overlay $(MAX_OBJS) | dirs
+	(cd $(MAX_OVERLAY_DIR) && \
+	$(CC) \
+		-D__llvm_mos__ \
+		-T ../../$(LDSCRIPT) \
+		-Wl,-Map=../$(MAX_NAME).map \
+		-o ../$(MAX_NAME) \
+		-I../.. \
+		-Os -Wall -lm \
+		$(addprefix ../,$(notdir $(MAX_OBJS))) \
+		$(LDFLAGS))
+
+$(BUILD_DIR)/$(MAX_NAME).pgz: $(BUILD_DIR)/$(MAX_NAME)
+	@if [ -f $(BUILD_DIR)/$(MAX_NAME).elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(MAX_NAME).elf; \
+	elif [ -f $(BUILD_DIR)/$(MAX_NAME).elf.elf ]; then \
+		ELF_FILE=$(BUILD_DIR)/$(MAX_NAME).elf.elf; \
+	else \
+		ELF_FILE=; \
+	fi; \
+	if [ -n "$$ELF_FILE" ]; then \
+		$(NM) "$$ELF_FILE" > $(BUILD_DIR)/$(MAX_NAME).sym || true; \
+		$(OBJDUMP) --syms -d --print-imm-hex "$$ELF_FILE" > $(BUILD_DIR)/$(MAX_NAME).lst || true; \
+	fi
+
+	@if [ -f $(BUILD_DIR)/$(MAX_NAME) ]; then \
+		mv $(BUILD_DIR)/$(MAX_NAME) $(BUILD_DIR)/$(MAX_NAME).pgz; \
+	fi
+
+	@if [ -f $(BUILD_DIR)/$(MAX_NAME).pgz ]; then \
+		SCRIPT=""; \
+		if [ -f "$(PGZ_THUNK)" ]; then \
+			SCRIPT="$(PGZ_THUNK)"; \
+		elif command -v $(PGZ_THUNK) >/dev/null 2>&1; then \
+			SCRIPT="$$(command -v $(PGZ_THUNK))"; \
+		fi; \
+		if [ -n "$$SCRIPT" ]; then \
+			$(PYTHON) "$$SCRIPT" $(BUILD_DIR)/$(MAX_NAME).pgz || echo "pgz-thunk did not process $(BUILD_DIR)/$(MAX_NAME).pgz"; \
+		fi; \
+	fi
+
+	# Ensure a PGZ artifact was produced by overlay/pgz-thunk.
+	@if [ ! -f $(BUILD_DIR)/$(MAX_NAME).pgz ]; then \
+		echo "ERROR: pgz-thunk did not produce $(BUILD_DIR)/$(MAX_NAME).pgz" >&2; \
+		exit 1; \
+	fi
+	@mkdir -p bin
+	@cp $(BUILD_DIR)/$(MAX_NAME).pgz bin/
+
 .PHONY: examples
-examples: single_object multi_object_scene
-	@echo "Built examples: bin/single_object.pgz bin/multi_object_scene.pgz"
+examples: single_object multi_object_scene max_object_scene
+	@echo "Built examples: bin/single_object.pgz bin/multi_object_scene.pgz bin/max_object_scene.pgz"
 
 
 info:

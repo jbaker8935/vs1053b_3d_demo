@@ -32,10 +32,11 @@ typedef struct {
     const DemoEvent          *events;
     uint8_t                   instance_count;
     const SceneObjectParams  *initial_instances;   // copied to RAM on demo start
-    const Model3D * const    *initial_models;      // parallel to initial_instances; NULL = set by on_enter
+    const Object3D * const    *initial_models;      // parallel to initial_instances; NULL = set by on_enter
     uint8_t                   near_color;          // used only by scene API path
     uint8_t                   far_color;           // used only by scene API path
     bool                      use_scene_api;       // true = scene_get_screen_edges; false = single-object loop
+    bool                      disable_idle_timeout; // true = never auto-advance on idle (interactive demos)
     demo_fn_t                 on_enter;            // setup called before first event; NULL ok
     demo_fn_t                 on_exit;             // teardown after last event; NULL ok
 } Demo;
@@ -54,7 +55,7 @@ extern int8_t  g_instance_scale_dir[DEMO_MAX_INSTANCES];
 extern bool g_demo_aabb_overlay;
 // Model pointer for each instance — used by single-object render path.
 // Populated from Demo.initial_models on demo start; on_enter can override.
-extern const Model3D *g_demo_models[DEMO_MAX_INSTANCES];
+extern const Object3D *g_demo_models[DEMO_MAX_INSTANCES];
 
 // ---------------------------------------------------------------------------
 // Public API

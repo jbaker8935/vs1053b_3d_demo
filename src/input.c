@@ -34,6 +34,7 @@ state->edge.rotateLeft = false;
 state->edge.rotateRight = false;
 state->edge.rotateUp = false;
 state->edge.rotateDown = false;
+state->edge.firePrimary = false;
 state->edge.resetCam = false;
 state->edge.exit = false;
 state->edge.swapStereo = false;

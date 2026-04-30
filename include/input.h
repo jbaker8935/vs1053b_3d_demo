@@ -17,6 +17,7 @@ bool rotateLeft;
 bool rotateRight;
 bool rotateUp;
 bool rotateDown;
+bool firePrimary;
 bool resetCam;
 bool exit;
 bool swapStereo; /* Toggle L/R channel output */
