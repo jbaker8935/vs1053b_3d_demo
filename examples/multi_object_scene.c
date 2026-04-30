@@ -83,14 +83,7 @@ static void camera_orbit(void) {
 
     // Face toward center: yaw = 64 - orbit_angle (sin/yaw mapping for this math setup)
     camera_yaw = (uint8_t)(64u - camera_orbit_angle);
-    // if (camera_yaw % 5 == 0) {
-    //     textGotoXY(0, 3);
 
-    //     textPrint("Camera Yaw:    ");
-    //     textGotoXY(12, 3);
-    //     textPrintUInt(camera_yaw);
-    //     textPrint("\n");
-    // }
 }
 
 int main(int argc, char *argv[]) {
