@@ -34,8 +34,8 @@ void render_scene_aabb_overlay(uint8_t draw_layer) {
         uint8_t min_y;
         uint8_t max_y;
 
-        vgk_scene_object_meta_get(obj, &meta);
         vgk_yield();
+        vgk_scene_object_meta_get(obj, &meta);
         if (!scene_meta_has_visible_aabb(&meta)) {
             continue;
         }

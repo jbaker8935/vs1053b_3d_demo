@@ -29,18 +29,12 @@ __export const char kick_right[] = {
 #pragma data(data)
 
 #pragma section( vgm_water_sec, 0 )
-#pragma region(  vgm_water_reg, 0x20000, 0x30000, , , {vgm_water_sec} )
+#pragma region(  vgm_water_reg, 0x20000, 0x356A5, , , {vgm_water_sec} )
 #pragma data(vgm_water_sec)
 __export const char water_vgm[] = { 
-    #embed "assets/water_0.vgm" 
+    #embed 87717 0 "assets/water.vgm" 
 };
 
-#pragma section( vgm_water_sec_1, 0 )
-#pragma region(  vgm_water_reg_1, 0x30000, 0x356A5, , , {vgm_water_sec_1} )
-#pragma data(vgm_water_sec_1)
-__export const char water_vgm_tail[] = {
-    #embed "assets/water_1.vgm"
-};
 
 #pragma data(data)
 
