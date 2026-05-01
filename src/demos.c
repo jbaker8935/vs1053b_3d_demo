@@ -783,10 +783,6 @@ static void demo7_update_projectile(void) {
 
     remaining = (uint16_t)(DEMO7_PROJECTILE_MAX_DIST - g_demo7_projectile.distance_traveled);
     step = remaining < DEMO7_PROJECTILE_SPEED ? remaining : DEMO7_PROJECTILE_SPEED;
-    if (step == 0u) {
-        g_demo7_projectile.active = false;
-        return;
-    }
 
     g_demo7_projectile.pos_x = (int16_t)(g_demo7_projectile.pos_x +
         (int16_t)(mathSignedMultiply(g_demo7_projectile.dir_x, (int16_t)step) >> 14));

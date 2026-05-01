@@ -2,6 +2,7 @@
 #define VIDEO_H
 
 #include <stdint.h>
+#include "oscar64_compat.h"
 
 void video_init(void);
 void video_wait_vblank(void);

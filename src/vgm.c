@@ -9,6 +9,7 @@
  */
 
 #include "f256lib.h"
+#include "../include/oscar64_compat.h"
 
 #include "../include/opl3_io.h"
 #include "../include/timer.h"
@@ -83,6 +84,32 @@ static void opl_silence(void)
     }
 }
 
+/* Force all channel/operator state to a silent baseline.
+ * This is stricter than opl_silence() and helps prevent residual tones on
+ * toolchains/hardware combinations that leave channel state latched. */
+static void opl_hard_mute(void)
+{
+    uint8_t i;
+
+    opl_write_port0(0xBDu, 0x00u);  /* rhythm off */
+
+    for (i = 0u; i < 9u; ++i) {
+        opl_write_port0((uint8_t)(0xA0u + i), 0x00u);
+        opl_write_port1((uint8_t)(0xA0u + i), 0x00u);
+        opl_write_port0((uint8_t)(0xB0u + i), 0x00u);
+        opl_write_port1((uint8_t)(0xB0u + i), 0x00u);
+        opl_write_port0((uint8_t)(0xC0u + i), 0x00u);
+        opl_write_port1((uint8_t)(0xC0u + i), 0x00u);
+    }
+
+    for (i = 0u; i <= 0x15u; ++i) {
+        opl_write_port0((uint8_t)(0x40u + i), 0x3Fu);
+        opl_write_port1((uint8_t)(0x40u + i), 0x3Fu);
+    }
+
+    opl_silence();
+}
+
 /* Minimal OPL3 chip initialisation.
  *   mode == 3  → enable OPL3 extended feature set (reg 0x105 = 1)
  *   mode == 2  → OPL2 compatible (reg 0x105 = 0)
@@ -135,7 +162,7 @@ static __attribute__((noinline)) uint8_t buf_refill_and_get(void)
 
 static __attribute__((always_inline)) uint8_t buf_get(void)
 {
-    if (__builtin_expect(vgm_buf_pos < vgm_buf_len, 1)) {
+    if (vgm_buf_pos < vgm_buf_len) {
         return vgm_buf[vgm_buf_pos++];
     }
     return buf_refill_and_get();
@@ -266,8 +293,8 @@ static bool schedule_wait_catchup(uint32_t ticks)
 /* Schedules the next VGM wait.  Arms T0 and sets VGM_FLAG_TIMER_RUN. */
 static bool schedule_wait(uint32_t ticks)
 {
-    if (__builtin_expect((vgm_flags & VGM_FLAG_COMPENSATE) == 0u &&
-                         vgm_catchup_debt_ticks == 0u, 1)) {
+    if ((vgm_flags & VGM_FLAG_COMPENSATE) == 0u &&
+                         vgm_catchup_debt_ticks == 0u) {
         return schedule_wait_arm(ticks);
     }
     return schedule_wait_catchup(ticks);
@@ -610,18 +637,7 @@ end_of_data:
 
 void vgm_close(void)
 {
-    uint8_t i;
-
-    for (i = 0u; i < 9u; ++i) {
-        opl_write_port0((uint8_t)(0xC0u + i), 0x00u);
-        opl_write_port1((uint8_t)(0xC0u + i), 0x00u);
-    }
-
-    for (i = 0u; i <= 0x15u; ++i) {
-        opl_write_port0((uint8_t)(0x40u + i), 0x3Fu);
-        opl_write_port1((uint8_t)(0x40u + i), 0x3Fu);
-    }
-    opl_silence();
+    opl_hard_mute();
 
     vgm_flags = VGM_FLAG_DONE;
 

@@ -20,10 +20,21 @@
 #define OPL_DATA    0xD581u  /* shared data register                      */
 #define OPL_ADDR_H  0xD582u  /* port-1 address register (regs 0x00-0xFF) */
 
+/* helper added to fix a timing issue found when compiling with oscar64 */
+static inline void opl_io_settle(void)
+{
+#ifdef __OSCAR64__
+        __asm { nop }
+#else
+        __asm__("nop");
+#endif
+}
+
 /* Write one OPL3 register on port 0 (bank A, channels 0-8). */
 static inline void opl_write_port0(uint8_t reg, uint8_t val)
 {
     POKE(OPL_ADDR_L, reg);
+    opl_io_settle();
     POKE(OPL_DATA, val);
 }
 
@@ -31,6 +42,7 @@ static inline void opl_write_port0(uint8_t reg, uint8_t val)
 static inline void opl_write_port1(uint8_t reg, uint8_t val)
 {
     POKE(OPL_ADDR_H, reg);
+    opl_io_settle();
     POKE(OPL_DATA, val);
 }
 

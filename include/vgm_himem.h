@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "oscar64_compat.h"
 
 /*
  * vgm_himem.h -- VGM high-memory cache backend for F256 K2

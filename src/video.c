@@ -9,7 +9,11 @@ uint32_t bitmap_base[] = {0x6c000, 0x58000, 0x44000};
 __attribute__((optnone,noinline))
 void dmaBitmapClear(uint8_t layer) {
 
+	#ifdef __OSCAR64__
+	__asm { sei }
+	#else
 	asm("sei");
+	#endif
 	POKE(DMA_CTRL, DMA_CTRL_FILL | DMA_CTRL_ENABLE | DMA_16_BIT);
 	POKEA(DMA_DST_ADDR, bitmap_base[layer]);
 	POKEA(DMA_COUNT, 0x12C00); 
@@ -25,7 +29,11 @@ void dmaBitmapClear(uint8_t layer) {
 	}
 	POKE(0xDF00, 0x00); // Stop DMA
 
+	#ifdef __OSCAR64__
+	__asm { cli }
+	#else
 	asm("cli");
+	#endif
 
 }
 

@@ -1,5 +1,5 @@
-#ifndef VS1053B_H
-#define VS1053B_H
+#ifndef VGK_VS1053B_H
+#define VGK_VS1053B_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -85,4 +85,4 @@ void vs1053_dac_interrupt_enable(void);
 void vs1053_plugin_load(uint32_t plugin_data_start, uint32_t plugin_data_end);
 void vs1053_clock_boost(uint16_t mult, uint16_t add);
 
-#endif /* VS1053B_H */
+#endif /* VGK_VS1053B_H */

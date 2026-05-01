@@ -25,6 +25,7 @@ LDSCRIPT ?= f256.ld
 CFLAGS ?= -I$(ROOT) -I$(ROOT)/src -I$(ROOT)/include -I/opt/llvm-mos/include -Os -Wall -D__llvm_mos__
 ASMFLAGS ?= -I$(ROOT) -I$(ROOT)/src -I$(ROOT)/include -I/opt/llvm-mos/include -Wall
 LDFLAGS ?=
+DEPFLAGS := -MMD -MP
 
 # Collect sources from src/ only. Explicitly exclude libfixmath and other dirs.
 SRCS_C := $(wildcard src/*.c)
@@ -41,9 +42,9 @@ all: pgz
 dirs:
 	@mkdir -p $(BUILD_DIR)
 
-COMPILE = $(CC) -c $(CFLAGS) -o $@ $<
+COMPILE = $(CC) -c $(CFLAGS) $(DEPFLAGS) -o $@ $<
 
-COMPILE_ASM = $(CC) -c $(ASMFLAGS) -o $@ $<
+COMPILE_ASM = $(CC) -c $(ASMFLAGS) $(DEPFLAGS) -o $@ $<
 
 
 # Compile both C and assembly with the same command (mos-f256-clang)
@@ -53,7 +54,7 @@ $(BUILD_DIR)/%.o: src/%.c | dirs
 
 # Compile the bench harness (not in src/) so it can be built independently
 $(BUILD_DIR)/bench_mul.o: tools/bench_mul.c | dirs
-	$(CC) -c $(CFLAGS) -o $@ $<
+	$(CC) -c $(CFLAGS) $(DEPFLAGS) -o $@ $<
 
 # Link (produces an output binary named '$(NAME)')
 $(BUILD_DIR)/$(NAME): $(OBJS) | dirs
@@ -178,7 +179,7 @@ single_object_overlay: dirs
 	fi
 
 $(BUILD_DIR)/$(SINGLE_NAME).o: $(SINGLE_SRC) | dirs
-	$(CC) -c $(CFLAGS) -o $@ $<
+	$(CC) -c $(CFLAGS) $(DEPFLAGS) -o $@ $<
 
 $(BUILD_DIR)/$(SINGLE_NAME).s: $(SINGLE_SRC) | dirs
 	$(CC) -S $(CFLAGS) -o $@ $<
@@ -267,7 +268,10 @@ multi_object_overlay: dirs
 	fi
 
 $(BUILD_DIR)/$(MULTI_NAME).o: $(MULTI_SRC) | dirs
-	$(CC) -c $(CFLAGS) -o $@ $<
+	$(CC) -c $(CFLAGS) $(DEPFLAGS) -o $@ $<
+
+DEPS := $(OBJS:.o=.d) $(SINGLE_OBJ:.o=.d) $(MULTI_OBJ:.o=.d)
+-include $(DEPS)
 
 $(BUILD_DIR)/$(MULTI_NAME).s: $(MULTI_SRC) | dirs
 	$(CC) -S $(CFLAGS) -o $@ $<

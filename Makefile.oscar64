@@ -1,0 +1,160 @@
+# Makefile.oscar64 -- Build vs1053b_3d_demo with the oscar64 compiler for the F256 K2.
+#
+# Toolchain layout (relative to the repo root):
+#   ../oscar64/bin/oscar64           -- compiler binary
+#   ../f256lib-oscar64/f256lib/      -- f256lib compatibility library
+#
+# Usage:
+#   make -f Makefile.oscar64 pgz           # build main demo
+#   make -f Makefile.oscar64 examples      # build all three example programs
+#   make -f Makefile.oscar64 all           # both
+#   make -f Makefile.oscar64 clean         # remove build_oscar64/
+#   make -f Makefile.oscar64 run           # build + transfer main pgz
+
+ROOT     := $(CURDIR)
+BUILD    := $(ROOT)/build_oscar64
+BIN      := $(ROOT)/bin
+
+OSCAR64  := $(ROOT)/../oscar64/bin/oscar64
+F256LIB  := $(ROOT)/../f256lib-oscar64/f256lib
+
+# f256lib.c must be compiled alongside every program.
+F256LIB_SRC := $(F256LIB)/f256lib.c
+
+FOENIX_MGR := /home/john/code/FoenixMgr/fm.sh
+
+# Compiler flags common to all targets.
+# -tm=f256k  : target machine
+# -n         : no default output name (we supply -o=)
+# -i=...     : include search path (f256lib headers)
+OSCAR_FLAGS := -tm=f256k -n \
+               -d__OSCAR64__ \
+               -i=$(F256LIB) \
+               -i=$(ROOT)/include \
+               -i=$(ROOT)/src
+
+# Rebuild outputs when any shared header changes.
+HDRS := $(wildcard $(ROOT)/include/*.h)
+
+# ---------------------------------------------------------------------------
+# Main demo sources  (all src/*.c except main.c-replacement)
+# ---------------------------------------------------------------------------
+
+MAIN_NAME := vs1053b_3d_demo
+
+MAIN_SRCS := \
+    $(ROOT)/src/main.c \
+    $(ROOT)/src/3d_math.c \
+    $(ROOT)/src/3d_object.c \
+    $(ROOT)/src/codec.c \
+    $(ROOT)/src/demo.c \
+    $(ROOT)/src/demos.c \
+    $(ROOT)/src/game_state.c \
+    $(ROOT)/src/geometry_kernel.c \
+    $(ROOT)/src/input.c \
+    $(ROOT)/src/input_handler.c \
+    $(ROOT)/src/render.c \
+    $(ROOT)/src/timer.c \
+    $(ROOT)/src/vgm.c \
+    $(ROOT)/src/vgm_assets.c \
+    $(ROOT)/src/vgm_himem.c \
+    $(ROOT)/src/video.c \
+    $(ROOT)/src/video_asset.c \
+    $(ROOT)/src/vs1053b.c \
+    $(F256LIB_SRC)
+
+MAIN_PGZ  := $(BUILD)/$(MAIN_NAME).pgz
+
+# ---------------------------------------------------------------------------
+# Example: single_object
+# ---------------------------------------------------------------------------
+
+SINGLE_NAME  := single_object
+SINGLE_SRCS  := \
+    $(ROOT)/examples/single_object.c \
+    $(ROOT)/src/3d_math.c \
+    $(ROOT)/src/3d_object.c \
+    $(ROOT)/src/geometry_kernel.c \
+    $(ROOT)/src/video.c \
+    $(ROOT)/src/vs1053b.c \
+    $(F256LIB_SRC)
+SINGLE_PGZ   := $(BUILD)/$(SINGLE_NAME).pgz
+
+# ---------------------------------------------------------------------------
+# Example: multi_object_scene
+# ---------------------------------------------------------------------------
+
+MULTI_NAME   := multi_object_scene
+MULTI_SRCS   := \
+    $(ROOT)/examples/multi_object_scene.c \
+    $(ROOT)/src/3d_math.c \
+    $(ROOT)/src/3d_object.c \
+    $(ROOT)/src/geometry_kernel.c \
+    $(ROOT)/src/video.c \
+    $(ROOT)/src/vs1053b.c \
+    $(F256LIB_SRC)
+MULTI_PGZ    := $(BUILD)/$(MULTI_NAME).pgz
+
+# ---------------------------------------------------------------------------
+# Example: max_object_scene
+# ---------------------------------------------------------------------------
+
+MAX_NAME     := max_object_scene
+MAX_SRCS     := \
+    $(ROOT)/examples/max_object_scene.c \
+    $(ROOT)/src/3d_math.c \
+    $(ROOT)/src/3d_object.c \
+    $(ROOT)/src/geometry_kernel.c \
+    $(ROOT)/src/video.c \
+    $(ROOT)/src/vs1053b.c \
+    $(F256LIB_SRC)
+MAX_PGZ      := $(BUILD)/$(MAX_NAME).pgz
+
+# ---------------------------------------------------------------------------
+# Targets
+# ---------------------------------------------------------------------------
+
+.PHONY: all pgz examples single_object multi_object_scene max_object_scene clean run dirs
+
+all: pgz examples
+
+dirs:
+	@mkdir -p $(BUILD) $(BIN)
+
+pgz: dirs $(MAIN_PGZ)
+	@cp $(MAIN_PGZ) $(BIN)/$(MAIN_NAME)_oscar64.pgz
+	@echo "Built: bin/$(MAIN_NAME)_oscar64.pgz"
+
+examples: single_object multi_object_scene max_object_scene
+
+single_object: dirs $(SINGLE_PGZ)
+	@cp $(SINGLE_PGZ) $(BIN)/$(SINGLE_NAME)_oscar64.pgz
+	@echo "Built: bin/$(SINGLE_NAME)_oscar64.pgz"
+
+multi_object_scene: dirs $(MULTI_PGZ)
+	@cp $(MULTI_PGZ) $(BIN)/$(MULTI_NAME)_oscar64.pgz
+	@echo "Built: bin/$(MULTI_NAME)_oscar64.pgz"
+
+max_object_scene: dirs $(MAX_PGZ)
+	@cp $(MAX_PGZ) $(BIN)/$(MAX_NAME)_oscar64.pgz
+	@echo "Built: bin/$(MAX_NAME)_oscar64.pgz"
+
+$(MAIN_PGZ): $(MAIN_SRCS) $(HDRS)
+	$(OSCAR64) $(OSCAR_FLAGS) $(filter-out $(F256LIB_SRC),$(MAIN_SRCS)) -o=$(MAIN_PGZ)
+
+$(SINGLE_PGZ): $(SINGLE_SRCS) $(HDRS)
+	$(OSCAR64) $(OSCAR_FLAGS) $(filter-out $(F256LIB_SRC),$(SINGLE_SRCS)) -o=$(SINGLE_PGZ)
+
+$(MULTI_PGZ): $(MULTI_SRCS) $(HDRS)
+	$(OSCAR64) $(OSCAR_FLAGS) $(filter-out $(F256LIB_SRC),$(MULTI_SRCS)) -o=$(MULTI_PGZ)
+
+$(MAX_PGZ): $(MAX_SRCS) $(HDRS)
+	$(OSCAR64) $(OSCAR_FLAGS) $(filter-out $(F256LIB_SRC),$(MAX_SRCS)) -o=$(MAX_PGZ)
+
+run: pgz
+	@echo "Transferring $(BIN)/$(MAIN_NAME)_oscar64.pgz to Foenix..."
+	@$(FOENIX_MGR) --port /dev/ttyUSB2 --run-pgz $(BIN)/$(MAIN_NAME)_oscar64.pgz
+
+clean:
+	rm -rf $(BUILD)
+	@echo "Cleaned $(BUILD)"

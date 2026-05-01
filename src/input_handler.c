@@ -1,4 +1,5 @@
 #include "f256lib.h"
+#include "../include/oscar64_compat.h"
 #include "../include/input.h"
 #include "../include/input_handler.h"
 #include "../include/game_state.h"
@@ -45,7 +46,7 @@ size_t type = kernelEventData.type;
 
 if (type == kernelEvent(key.PRESSED) || type == kernelEvent(key.RELEASED)) {
 bool pressed = (type == kernelEvent(key.PRESSED));
-record_key_state(state, kernelEventData.key.ascii, pressed);
+			record_key_state(state, KEVENT(key.ascii), pressed);
 }
 }
 }

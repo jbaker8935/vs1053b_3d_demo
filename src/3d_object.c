@@ -1,6 +1,7 @@
 #include "../include/3d_object.h"
 #include "../include/3d_math.h"
 #include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
 #define SCALE 150

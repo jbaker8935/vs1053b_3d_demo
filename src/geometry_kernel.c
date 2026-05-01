@@ -29,7 +29,19 @@
 /* Users may modify the address as needed by their application */
 /* The address *must* be a numeric value.  You cannot use a define or a variable */
 
+#ifdef __OSCAR64__
+#pragma section( vgm_plugin, 0 )
+#pragma region(  vgm_plugin_reg, 0x3F000lu, 0x432CE, , , {vgm_plugin} )
+#pragma data(vgm_plugin)
+__export const char plugin_data[] = { 
+    #embed "assets/plugin.bin" 
+};
+#pragma data(data)
+#else /* llvm-mos */
+
 EMBED(plugin_data,"assets/plugin.bin",0x3F000lu);
+
+#endif /* __OSCAR64__ */
 #define PLUGIN_SIZE_BYTES (17102lu)
 
 /** @copydoc vgk_plugin_init */
@@ -50,15 +62,30 @@ void vgk_plugin_init(void) {
 
 static edge_coloring_t vgk_edge_coloring_mode = false;
 
-/** Internal table: maps save-slot index to its host-side Object3D pointer for color look-up. */
-Object3D * slot_object[VGK_SAVE_SLOT_COUNT] = {NULL};
+/**
+ * Internal table: maps save-slot index to host-side Object3D pointer bytes.
+ *
+ * Work-around for oscar64 codegen for arrays of struct pointers.
+ * previously used Object3D* slot_object[VGK_SAVE_SLOT_COUNT], 
+ * Supposed to work, but wasn't working correctly when compile with oscar64.
+ */
+static uint8_t slot_object_lo[VGK_SAVE_SLOT_COUNT] = {0};
+static uint8_t slot_object_hi[VGK_SAVE_SLOT_COUNT] = {0};
+
+static Object3D *vgk_slot_object_get(uint8_t slot) {
+    uintptr_t addr = (uintptr_t)slot_object_lo[slot] |
+                     ((uintptr_t)slot_object_hi[slot] << 8);
+    return (Object3D *)addr;
+}
 
 /** @copydoc vgk_slot_object */
 void vgk_slot_object(const Object3D* obj, uint8_t slot) {
     if(slot >= VGK_SAVE_SLOT_COUNT) {
         return;  // Invalid slot; do nothing
     }
-    slot_object[slot] = (Object3D *)obj;
+    uintptr_t addr = (uintptr_t)obj;
+    slot_object_lo[slot] = (uint8_t)(addr & 0xFFu);
+    slot_object_hi[slot] = (uint8_t)((addr >> 8) & 0xFFu);
 }
 
 
@@ -296,7 +323,11 @@ uint8_t vgk_wait_complete(uint16_t timeout_ms) {
             g_yield_cb();
         } else {
             for ( uint8_t delay = 0; delay < 25; delay++) {
+#ifdef __OSCAR64__
+                __asm { nop }
+#else
                 __asm__("nop");
+#endif
             }
         }
         elapsed++;
@@ -377,14 +408,16 @@ uint8_t vgk_scrn_edges_render(uint8_t layer, uint8_t default_color) {
             uint16_t desc = vs1053_sci_read(SCI_WRAM); //(bit15=near, bits8-14=slot, bits0-7=edge_idx)
             uint8_t slot = (uint8_t)((desc >> VGK_EDESC_SLOT_SHIFT) & VGK_EDESC_SLOT_MASK);
             uint8_t edge_idx = (uint8_t)(desc & VGK_EDESC_IDX_MASK);
-            if (slot < VGK_SAVE_SLOT_COUNT && slot_object[slot] != NULL) {
-                const Object3D* obj = slot_object[slot];
-                if (vgk_edge_coloring_mode == VGK_EC_EDGE_COLORING && obj->edge_color_count > edge_idx) {
-                    uint16_t edge_color = obj->edge_color[edge_idx];
-                    POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? edge_color & 0xFF : edge_color >> 8); // near = low byte, far = high byte
-                } else if (vgk_edge_coloring_mode == VGK_EC_NEAR_FAR) {
-                    uint16_t object_color = obj->object_color;
-                    POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? object_color & 0xFF : object_color >> 8); // near = low byte, far = high byte
+            if (slot < VGK_SAVE_SLOT_COUNT) {
+                const Object3D* obj = vgk_slot_object_get(slot);
+                if (obj != NULL) {
+                    if (vgk_edge_coloring_mode == VGK_EC_EDGE_COLORING && obj->edge_color_count > edge_idx) {
+                        uint16_t edge_color = obj->edge_color[edge_idx];
+                        POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? edge_color & 0xFF : edge_color >> 8); // near = low byte, far = high byte
+                    } else if (vgk_edge_coloring_mode == VGK_EC_NEAR_FAR) {
+                        uint16_t object_color = obj->object_color;
+                        POKE(DL_COLOR, desc & VGK_EDESC_NEAR_BIT ? object_color & 0xFF : object_color >> 8); // near = low byte, far = high byte
+                    }
                 }
             }
         }

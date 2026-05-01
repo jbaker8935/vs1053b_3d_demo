@@ -1,4 +1,6 @@
+#ifndef __OSCAR64__
 #define F256LIB_IMPLEMENTATION
+#endif
 #include "f256lib.h"
 #include <stdio.h>
 #include "../include/game_state.h"

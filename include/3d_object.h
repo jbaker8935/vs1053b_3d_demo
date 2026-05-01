@@ -18,6 +18,7 @@
 #include <stdbool.h>
 #include "../include/3d_math.h"
 #include <stdint.h>
+#include "oscar64_compat.h"
 
 /**
  * @brief Sentinel value indicating an edge has no adjacent face.

@@ -1,3 +1,4 @@
+#include "../include/oscar64_compat.h"
 #include "f256lib.h"
 #include <stdint.h>
 #include "../include/vs1053b.h"

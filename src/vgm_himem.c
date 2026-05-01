@@ -8,6 +8,7 @@
  */
 
 #include "f256lib.h"
+#include "../include/oscar64_compat.h"
 #include "../include/vgm_himem.h"
 
 #define VGM_HIMEM_MAX_BYTES 524288UL
@@ -77,6 +78,9 @@ static bool vgm_himem_is_compatible_with_opl3(const uint8_t *hdr, uint16_t len)
  *   __rc11       dst bank
  *   __rc12:__rc13 chunk size - 1 (saved before MVN; used to update count)
  * ----------------------------------------------------------------------- */
+
+#ifndef __OSCAR64__
+
 void movedown24(uint32_t dest, uint32_t src, uint16_t count);
 asm(
     ".text\n"
@@ -183,6 +187,128 @@ asm(
     "rts\n"
 );
 
+#else /* __OSCAR64__ */
+void movedown24(uint32_t dest, uint32_t src, uint16_t count) {
+/*
+ * llvm-mos calling convention (uint32_t, uint32_t, uint16_t):
+ *   dest lo:hi:bank  -> A : X : __rc2
+ *   src  lo:hi:bank  -> __rc4 : __rc5 : __rc6
+ *   count lo:hi      -> __rc8 : __rc9
+ *
+ * ZP scratch (all __rcN caller-saved in llvm-mos):
+ *   __rc6:__rc7  dst 16-bit addr (rebuilt from A:X on entry)
+ *   __rc10       src bank
+ *   __rc11       dst bank
+ *   __rc12:__rc13 chunk size - 1 (saved before MVN; used to update count)
+ */
+     uint16_t chunk_size=0;
+ __asm {
+
+    /* Patch self-modifying MVN operand bytes while still in 8-bit mode */
+    lda dest+2
+    sta __mdn24_dst
+    lda src+2
+    sta __mdn24_src
+
+    /* Enter critical section */
+    php
+    sei
+    lda 0x00
+    ora #0x08
+    sta 0x00
+    lda 0x01
+    pha            /* save 0x01                              */
+    ora #0x30       /* bits4+5: Moves IO and Cart to Hi-Mem  */
+    sta 0x01
+
+    /* Switch to 65816 native 16-bit mode */
+    clc
+    byt 0xfb              /* XCE                                   */
+    byt 0xc2              /* REP #0x30 -- 16-bit A, X, Y            */
+    byt 0x30
+    ldx src              /* X = src 16-bit addr                   */
+    ldy dest              /* Y = dst 16-bit addr                   */
+
+    __mdn24_loop:
+
+    txa
+    byt 0x49    /* EOR #0xFFFF = 0xFFFF-X                  */
+    byt 0xff
+    byt 0xff
+    sta chunk_size
+
+    tya
+    byt 0x49    /* EOR #0xFFFF = 0xFFFF-Y                  */
+    byt 0xff
+    byt 0xff
+    
+    cmp chunk_size
+    bcc __mdn24_have_min
+    lda chunk_size
+    __mdn24_have_min:
+
+    cmp count
+    bcc __mdn24_do_mvn
+    lda count
+    byt 0x3a
+
+    __mdn24_do_mvn:
+    sta chunk_size
+
+    byt 0x54              /* MVN dest_bank, src_bank               */
+    __mdn24_dst:
+    byt 0x00
+    __mdn24_src:
+    byt 0x00
+    byt 0x4b              /* PHK -- push PBR (= 0) onto stack      */
+    byt 0xab              /* PLB -- pull stack top -> DBR = 0      */
+
+    lda count
+    byt 0x3a
+    sec
+    sbc chunk_size
+    sta count
+
+    beq __mdn24_done
+
+    byt 0xe0     /* CPX #0                                */
+    byt 0x00
+    byt 0x00
+    bne __mdn24_check_dst
+    byt 0xe2         /* SEP #0x20 -> 8-bit A                   */
+    byt 0x20
+    inc __mdn24_src
+    byt 0xc2          /* REP #0x20 -> 16-bit A                  */
+    byt 0x20
+
+    __mdn24_check_dst:
+    byt 0xc0    /* CPY #0                                */
+    byt 0x00
+    byt 0x00
+    bne __mdn24_loop
+    byt 0xe2         /* SEP #0x20 -> 8-bit A                   */
+    byt 0x20
+    inc __mdn24_dst
+    byt 0xc2         /* REP #0x20 -> 16-bit A                  */
+    byt 0x20
+    jmp __mdn24_loop
+
+    __mdn24_done:
+
+    sec
+    byt 0xfb              /* XCE                                   */
+
+    lda 0x00
+    and #0xF7
+    sta 0x00
+    pla
+    sta 0x01
+    plp
+    rts
+}
+}
+#endif /* __OSCAR64__ */
+
 
 /* -----------------------------------------------------------------------
  * vgm_himem_read -- vgm_read_fn callback.
@@ -219,33 +345,37 @@ void vgm_himem_seek(void *ctx, uint32_t offset)
 /* -----------------------------------------------------------------------
  * kernelReadC 
  * ----------------------------------------------------------------------- */
+#ifndef __OSCAR64__
 #pragma push_macro("EOF")
+#endif
 #undef EOF
 static __attribute__((noinline)) int16_t kernelReadC(uint8_t fd, void *buf, uint16_t nbytes)
 {
-    kernelArgs->file.read.stream = fd;
-    kernelArgs->file.read.buflen = nbytes;
+    KARGS(file.read.stream) = fd;
+    KARGS(file.read.buflen) = nbytes;
     kernelCall(File.Read);
     if (kernelError) return -1;
 
     for (;;) {
         kernelNextEvent();
-        switch (kernelEventData.type) {
-            case kernelEvent(file.DATA):
-                kernelArgs->common.buf = buf;
-                kernelArgs->common.buflen = kernelEventData.file.data.delivered;
+        size_t ev = kernelEventData.type;
+        if (ev == kernelEvent(file.DATA)) {
+                KARGS(common.buf) = buf;
+                KARGS(common.buflen) = KEVENT_FILE_DATA(data.delivered);
                 kernelCall(ReadData);
-                return (int16_t)kernelEventData.file.data.delivered;
-            case kernelEvent(file.EOF):
+                return (int16_t)KEVENT_FILE_DATA(data.delivered);
+        } else if (ev == kernelEvent(file.EOF)) {
                 return 0;
-            case kernelEvent(file.ERROR):
+        } else if (ev == kernelEvent(file.ERROR)) {
                 return -1;
-            default:
-                continue;
         }
     }
 }
+#ifndef __OSCAR64__
 #pragma pop_macro("EOF")
+#else
+#define EOF (-1)
+#endif
 
 /* -----------------------------------------------------------------------
  * vgm_himem_load -- read a VGM file into high memory.
@@ -253,7 +383,9 @@ static __attribute__((noinline)) int16_t kernelReadC(uint8_t fd, void *buf, uint
  * Opens the file with fileOpen, then loops calling kernelReadC (255 bytes
  * at a time) until EOF.  Each chunk is copied to high memory by movedown24.
  * ----------------------------------------------------------------------- */
+#ifndef __OSCAR64__
 __attribute__((noinline))
+#endif
 bool vgm_himem_load(const char *path, uint32_t base_addr, vgm_himem_ctx_t *ctx)
 {
     static uint8_t s_chunk[255];

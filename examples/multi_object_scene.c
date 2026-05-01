@@ -1,4 +1,6 @@
+#ifndef __OSCAR64__
 #define F256LIB_IMPLEMENTATION
+#endif
 #include "f256lib.h"
 
 #include "../include/geometry_kernel.h"
