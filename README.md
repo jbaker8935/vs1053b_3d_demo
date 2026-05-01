@@ -2,6 +2,8 @@
 
 API and demonstration applications for 3d coprocessor application running on the Wildbits K2 VS1053b chip.
 
+The C API is an reference/example implementation.  Application in other languages can use SCI directly to interface with the plugin.  See geometry_kernel.h and geometry_kernel.c to see how SCI calls are used.
+
 [API Documentation](https://jbaker8935.github.io/vs1053b_3d_demo/)
 
 ## RECENT UPDATE
