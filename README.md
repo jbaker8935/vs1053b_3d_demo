@@ -10,7 +10,7 @@ The C API is an reference/example implementation.  Applications in other languag
 
 - Added makefile and made code changes to support oscar64
 
-- Simplified edge streaming.  Visible edge vertices output in a packed list so they can be copied directly to the hardware line draw.   To allow edge correlation to an object an optional edge descriptor is provided.  Optionally read for near/far or object based edge coloring as desired.  The edge descriptor has have near/far flag | slot index | object edge index.   For speed the host streams the edge screen coords and outputs directly to hardware.  For object coloring, the host will read the edge descriptor first and then use host data to output the correct color value during line draw. 
+- Simplified edge streaming.  Visible edge vertices output in a packed list so they can be copied directly to the hardware line draw.   To allow edge correlation to an object an optional edge descriptor is provided.  Optionally read for near/far or object based edge coloring as desired.  The edge descriptor contains: near/far flag | slot index | object edge index.   For speed the host streams the edge screen coords and outputs directly to hardware.  When object coloring is enabled, the host will read the edge descriptor first and then use host data to output the correct color value when drawing the edge. 
 
 - Supports scenes with 32 objects
 - Supports up to 512 edges rendered in a single kernel call
